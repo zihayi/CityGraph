@@ -1,7 +1,6 @@
 import { Redo2, Save, Settings, Undo2 } from "lucide-react";
 import logoUrl from "../../../assets/logo.png?url";
 import type { TranslationKey } from "../../i18n";
-import { soundManager } from "../../services/SoundManager";
 
 interface Props {
   cityName: string;
@@ -15,7 +14,7 @@ interface Props {
 }
 
 export function TopBar(props: Props) {
-  const action = (callback: () => void) => () => { soundManager.playClick(); callback(); };
+  const action = (callback: () => void) => () => callback();
   return <header className="top-bar">
     <div className="brand-lockup"><img className="brand-logo" src={logoUrl} alt=""/><strong className="brand-city-name">{props.cityName}</strong></div>
     <nav className="top-actions" aria-label="History actions">

@@ -37,7 +37,7 @@ interface Props {
 }
 
 export function SettingsDialog(props: Props) {
-  const action = (callback: () => void) => () => { soundManager.playClick(); callback(); };
+  const action = (callback: () => void) => () => callback();
   return <div className="modal-backdrop"><section className="dialog-card settings-dialog" role="dialog" aria-modal="true">
     <header className="dialog-heading"><div><h2>{props.t("settings.title")}</h2><p>{props.t("settings.subtitle")}</p></div></header>
     <div className="settings-content">
@@ -55,7 +55,7 @@ export function SettingsDialog(props: Props) {
         </div>
       </section>
       <section className="settings-section"><h3>{props.t("settings.interface")}</h3>
-        <label className="settings-row"><span><Languages size={17}/>{props.t("common.language")}</span><select value={props.locale} onChange={(event) => { soundManager.playClick(); props.onLocale(event.target.value as Locale); }}><option value="zh-CN">{localeLabels["zh-CN"]}</option><option value="en-US">{localeLabels["en-US"]}</option></select></label>
+        <label className="settings-row"><span><Languages size={17}/>{props.t("common.language")}</span><select value={props.locale} onChange={(event) => props.onLocale(event.target.value as Locale)}><option value="zh-CN">{localeLabels["zh-CN"]}</option><option value="en-US">{localeLabels["en-US"]}</option></select></label>
         <label className="settings-row"><span><Maximize2 size={17}/><span className="settings-row-copy">{props.t("settings.fullscreen")}<small>{props.t("settings.fullscreenShortcut")}</small></span></span><span className="settings-switch"><input type="checkbox" checked={props.fullscreen} onChange={(event) => props.onFullscreen(event.target.checked)}/><span/></span></label>
         <label className="settings-slider"><span>{props.t("settings.opacity")}</span><small>{props.t("settings.opacityHint")}</small><div className="opacity-control"><input type="range" min="35" max="100" value={Math.round(props.opacity * 100)} onChange={(event) => props.onOpacity(Number(event.target.value) / 100)}/><output>{Math.round(props.opacity * 100)}%</output></div></label>
       </section>

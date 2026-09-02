@@ -12,6 +12,7 @@ import { nearestPointOnSegment } from "../geometry/Segment";
 import { nearestZoneSegment } from "../geometry/ZoneGeometry";
 import type { Point } from "../geometry/Point";
 import type { Building, BuildingStyle, BuildingType, FacilityPOI, RoadCategory, RoadGeometry, RoadStructure, RoadSubtype, ZoneType } from "../model/City";
+import { isFacilityPlacementValid } from "../model/FacilityPlacement";
 import { createBuildingPreset, dragFootprintEdge, extrudeFootprintEdge, footprintContainsPoint, footprintEdgeOutwardNormal, isValidBuildingFootprint, nearestFootprintEdge, translateFootprint, type BuildingPreset, type FootprintEdge } from "../geometry/BuildingGeometry";
 import { MapCamera } from "./MapCamera";
 import { MapRenderer } from "./MapRenderer";
@@ -34,7 +35,7 @@ interface MapViewportOptions {
   onZoomChange?: (percent: number, pixelsPerMeter: number) => void;
   onRotationChange?: (rotation: number) => void;
   onCameraChange?: (camera: CameraState) => void;
-  onValidation?: (key?: "road.invalid.water" | "road.invalid.short" | "zone.noRoadArea" | "building.invalid") => void;
+  onValidation?: (key?: "road.invalid.water" | "road.invalid.short" | "zone.noRoadArea" | "building.invalid" | "facility.invalid.building") => void;
   onRoadContextMenu?: (menu?: RoadContextMenu) => void;
   onZoneContextMenu?: (menu?: ZoneContextMenu) => void;
   onBuildingContextMenu?: (menu?: BuildingContextMenu) => void;
@@ -114,6 +115,8 @@ export class MapViewport {
   public createFacilityAtClientPosition(clientX: number, clientY: number, type: string, name: string, icon: string): string | undefined {
     if (!this.options.inputEnabled || !this.options.layers.facilities || !this.canvas) return undefined;
     const rect = this.canvas.getBoundingClientRect(); const position = this.camera.screenToMap({ x: clientX - rect.left, y: clientY - rect.top });
+    if (!isFacilityPlacementValid(this.editor.state.city.buildings, position)) { this.options.onValidation?.("facility.invalid.building"); return undefined; }
+    this.options.onValidation?.();
     return this.editor.createFacility({ type, name, icon, position });
   }
   public northUp(): void {
@@ -254,7 +257,11 @@ export class MapViewport {
     else if (this.gesture === "building" && this.draggedBuilding) this.editor.commitBuildingFootprint(this.draggedBuilding.id, this.draggedBuilding.beforeFootprint, "Move building");
     else if (this.gesture === "building-vertex" && this.draggedBuilding) this.editor.commitBuildingFootprint(this.draggedBuilding.id, this.draggedBuilding.beforeFootprint, "Move building vertex");
     else if (this.gesture === "building-edge" && this.draggedBuilding) this.editor.commitBuildingFootprint(this.draggedBuilding.id, this.draggedBuilding.beforeFootprint, this.options.building.extrude ? "Extrude building edge" : "Move building edge");
-    else if (this.gesture === "facility" && this.draggedFacility) this.editor.moveFacility(this.draggedFacility.id, this.draggedFacility.beforePosition);
+    else if (this.gesture === "facility" && this.draggedFacility) {
+      const facility = this.editor.state.city.facilities.find((candidate) => candidate.id === this.draggedFacility?.id);
+      if (facility && isFacilityPlacementValid(this.editor.state.city.buildings, facility.position)) { this.options.onValidation?.(); this.editor.moveFacility(this.draggedFacility.id, this.draggedFacility.beforePosition); }
+      else if (facility) { facility.position = { ...this.draggedFacility.beforePosition }; this.options.onValidation?.("facility.invalid.building"); this.editor.select({ kind: "facility", id: facility.id }); }
+    }
     this.renderer?.setNodeSnapTarget();
     this.draggedNode = undefined; this.draggedRoad = undefined; this.draggedZone = undefined; this.draggedBuilding = undefined; this.draggedFacility = undefined; this.renderer?.setBuildingEdge(undefined, this.editor.selection); this.gesture = null; this.pointerId = null; if (this.canvas?.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
     this.canvas?.classList.remove("is-panning", "is-rotating", "is-moving-road", "is-moving-zone", "is-moving-building", "is-moving-facility");

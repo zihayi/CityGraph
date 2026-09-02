@@ -24,7 +24,7 @@ interface Props {
   onZoomChange: (percent: number, pixelsPerMeter: number) => void;
   onRotationChange: (rotation: number) => void;
   onCameraChange: (camera: CameraState) => void;
-  onValidation: (key?: "road.invalid.water" | "road.invalid.short" | "zone.noRoadArea" | "building.invalid") => void;
+  onValidation: (key?: "road.invalid.water" | "road.invalid.short" | "zone.noRoadArea" | "building.invalid" | "facility.invalid.building") => void;
   onRoadContextMenu: (menu?: RoadContextMenu) => void;
   onZoneContextMenu: (menu?: ZoneContextMenu) => void;
   onBuildingContextMenu: (menu?: BuildingContextMenu) => void;
