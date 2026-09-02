@@ -21,6 +21,7 @@ export type LayerId =
   | "baseMap"
   | "roads"
   | "buildings"
+  | "facilities"
   | "poi"
   | "transit"
   | "parks"
@@ -140,6 +141,7 @@ export const defaultLayerVisibility: LayerVisibility = {
   baseMap: true,
   roads: true,
   buildings: true,
+  facilities: true,
   poi: true,
   transit: true,
   parks: true,
@@ -169,7 +171,7 @@ export const useEditorStore = create<EditorUiState>((set) => ({
   zoneMode: "custom",
   zoneType: "residential",
   zoneColor: defaultZoneColors.residential,
-  zoneIcon: "house-line",
+  zoneIcon: "residential",
   zoneIconColor: defaultZoneIconColors.residential,
   zoneIconOpacity: 1,
   zoningOpacity: 0.72,
@@ -194,7 +196,7 @@ export const useEditorStore = create<EditorUiState>((set) => ({
   autoSaveSlots: Math.max(1, Number(localStorage.getItem("citygraph:auto-save-slots")) || 5),
   autoSaveRetentionDays: Math.max(1, Number(localStorage.getItem("citygraph:auto-save-retention")) || 30),
   toolbarCollapsed: localStorage.getItem("citygraph:toolbar-collapsed") === "true",
-  setCurrentTool: (currentTool) => set((state) => ({ currentTool, layers: currentTool === "zones" ? { ...state.layers, zoning: true } : currentTool === "buildings" ? { ...state.layers, buildings: true } : state.layers })),
+  setCurrentTool: (currentTool) => set((state) => ({ currentTool, layers: currentTool === "zones" ? { ...state.layers, zoning: true } : currentTool === "buildings" ? { ...state.layers, buildings: true } : currentTool === "public" ? { ...state.layers, facilities: true } : state.layers })),
   setZoomPercent: (zoomPercent) => set({ zoomPercent: Math.round(zoomPercent) }),
   toggleLayer: (layer) =>
     set((state) => ({

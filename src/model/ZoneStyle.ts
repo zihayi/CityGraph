@@ -1,15 +1,16 @@
 import type { ZoneType } from "./City";
+import { zoneIconIds as assetZoneIconIds } from "./ZoneIconAssets";
 
-export const editableZoneTypes = ["residential", "commercial", "education", "medical", "government", "industrial", "office", "green", "mixed", "custom"] as const satisfies readonly ZoneType[];
+export const editableZoneTypes = ["residential", "commercial", "education", "medical", "government", "industrial", "office", "green", "custom"] as const satisfies readonly ZoneType[];
 
 export const defaultZoneColors: Record<ZoneType, string> = {
   residential: "#cfc2a3", commercial: "#b7a8c9", education: "#9fbfd0", medical: "#d8a6aa", government: "#9eafb9", industrial: "#a59aac", office: "#9caebd", green: "#9fbea5", mixed: "#b7aa9d", custom: "#aab2b5", public: "#9eafb9",
 };
 
-export const zoneIconIds = ["house-line", "shopping-bag-open", "graduation-cap", "first-aid", "building-office", "factory", "briefcase", "park", "coffee", "fork-knife", "book-open-text", "letter-circle-p"] as const;
+export const zoneIconIds = assetZoneIconIds;
 
 export const defaultZoneIcons: Record<ZoneType, string> = {
-  residential: "house-line", commercial: "shopping-bag-open", education: "graduation-cap", medical: "first-aid", government: "building-office", industrial: "factory", office: "briefcase", green: "park", mixed: "coffee", custom: "letter-circle-p", public: "building-office",
+  residential: "residential", commercial: "commercial", education: "education", medical: "medical", government: "government", industrial: "industrial", office: "office", green: "park", mixed: "commercial", custom: "custom", public: "government",
 };
 
 export const defaultZoneIconColors: Record<ZoneType, string> = {

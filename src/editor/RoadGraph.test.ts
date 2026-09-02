@@ -3,7 +3,7 @@ import type { City } from "../model/City";
 import { buildRoadCreation, continuationRoad, splitRoadEdge } from "./RoadGraph";
 
 function emptyCity(): City {
-  return { id: "test", name: "Test", bounds: { x: 0, y: 0, width: 1000, height: 1000 }, mapSize: "small", terrain: "flat", roadNodes: [], roads: [], roadEdges: [], buildings: [], blocks: [], zones: [], parks: [], waters: [], pois: [], transitLines: [], transitStations: [], labels: [] };
+  return { id: "test", name: "Test", bounds: { x: 0, y: 0, width: 1000, height: 1000 }, mapSize: "small", terrain: "flat", roadNodes: [], roads: [], roadEdges: [], buildings: [], blocks: [], zones: [], parks: [], waters: [], pois: [], facilities: [], transitLines: [], transitStations: [], labels: [] };
 }
 function input(start: { x: number; y: number }, end: { x: number; y: number }, overrides: Partial<Parameters<typeof buildRoadCreation>[1]> = {}): Parameters<typeof buildRoadCreation>[1] {
   return { start, end, category: "normal", subtype: "small", width: 8, name: "Road", structure: "ground", geometry: { type: "line" }, ...overrides };

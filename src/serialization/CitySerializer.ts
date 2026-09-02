@@ -12,6 +12,7 @@ export interface CityDocument {
   parks: City["parks"];
   water: City["waters"];
   pois: City["pois"];
+  facilities: City["facilities"];
   transitStations: City["transitStations"];
   transitLines: City["transitLines"];
   labels: City["labels"];
@@ -31,6 +32,7 @@ export class CitySerializer {
       parks: city.parks,
       water: city.waters,
       pois: city.pois,
+      facilities: city.facilities,
       transitStations: city.transitStations,
       transitLines: city.transitLines,
       labels: city.labels,

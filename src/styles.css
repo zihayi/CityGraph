@@ -644,8 +644,23 @@ button {
 .citygraph-canvas.is-moving-road { cursor: grabbing; }
 .citygraph-canvas.is-moving-zone { cursor: move; }
 .citygraph-canvas.is-moving-building { cursor: move; }
+.citygraph-canvas.is-moving-facility { cursor: grabbing; }
 .zone-palette { width: 214px; }
 .building-palette { width: 218px; }
+.facility-palette { width: 220px; }
+.facility-grid { display: grid; grid-template-columns: 1fr; gap: 5px; }
+.facility-grid button { display: flex; min-width: 0; height: 42px; align-items: center; gap: 10px; border: 1px solid rgb(82 123 137 / 40%); border-radius: 8px; padding: 0 9px; background: rgb(11 40 52 / 60%); color: #d3dfe2; cursor: grab; }
+.facility-grid button:hover { border-color: #39d1d0; background: rgb(15 93 101 / 55%); color: #f3ffff; }
+.facility-grid button:active { cursor: grabbing; }
+.facility-grid img { width: 25px; height: 25px; flex: 0 0 auto; object-fit: contain; filter: invert(92%) sepia(12%) saturate(315%) hue-rotate(130deg); }
+.facility-grid span { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.facility-overlay { position: absolute; z-index: 13; inset: 0; overflow: hidden; pointer-events: none; }
+.facility-marker { position: absolute; top: 0; left: 0; display: flex; align-items: center; gap: 5px; transform-origin: 0 0; }
+.facility-marker-icon { display: grid; width: 25px; height: 25px; place-items: center; transform: translate(-50%, -50%); border: 2px solid rgb(255 255 255 / 96%); border-radius: 50%; background: #ffffff; box-shadow: 0 2px 7px rgb(13 39 47 / 32%); }
+.facility-marker-icon img { width: 16px; height: 16px; object-fit: contain; }
+.facility-marker-icon i { color: #507078; font: 800 13px/1 system-ui, sans-serif; }
+.facility-marker b { max-width: 170px; overflow: hidden; transform: translate(-13px, -50%); color: #26383d; font: 650 12px/1.1 system-ui, sans-serif; text-overflow: ellipsis; text-shadow: -1px -1px 0 #fff, 1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff, 0 2px 3px rgb(255 255 255 / 85%); white-space: nowrap; }
+.facility-marker.is-selected .facility-marker-icon { border-color: #13b9bb; box-shadow: 0 0 0 3px rgb(38 205 205 / 24%), 0 3px 9px rgb(13 39 47 / 35%); }
 .building-mode-toggle { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .building-preset-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
 .building-preset-grid button { display: flex; min-width: 0; height: 38px; align-items: center; gap: 7px; border: 1px solid rgb(82 123 137 / 40%); border-radius: 7px; padding: 0 8px; background: rgb(11 40 52 / 60%); color: #b8c8cd; cursor: pointer; }
@@ -775,6 +790,7 @@ button {
   .road-palette { top: 72px; width: 156px; }
   .zone-palette { width: min(210px, calc(100vw - 166px)); }
   .building-palette { width: min(218px, calc(100vw - 166px)); }
+  .facility-palette { width: min(220px, calc(100vw - 166px)); }
   .right-floating-ui { top: 72px; right: 8px; bottom: 8px; width: min(280px, calc(100vw - 86px)); }
   .settings-action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-number-grid { grid-template-columns: 1fr; }

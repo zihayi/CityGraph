@@ -6,12 +6,12 @@ import type { TranslationKey } from "../../i18n";
 import type { ZoneType } from "../../model/City";
 import { defaultZoneColors, defaultZoneIconColors, editableZoneTypes, zoneIconIds } from "../../model/ZoneStyle";
 import { soundManager } from "../../services/SoundManager";
-import { zoneIconPath } from "../../model/ZoneIconAssets";
+import { zoneIconPath, zoneIconViewBox } from "../../model/ZoneIconAssets";
 import { defaultZoneIcons } from "../../model/ZoneStyle";
 
-const typeKeys: Record<(typeof editableZoneTypes)[number], TranslationKey> = { residential: "zone.type.residential", commercial: "zone.type.commercial", education: "zone.type.education", medical: "zone.type.medical", government: "zone.type.government", industrial: "zone.type.industrial", office: "zone.type.office", green: "zone.type.green", mixed: "zone.type.mixed", custom: "zone.type.custom" };
+const typeKeys: Record<(typeof editableZoneTypes)[number], TranslationKey> = { residential: "zone.type.residential", commercial: "zone.type.commercial", education: "zone.type.education", medical: "zone.type.medical", government: "zone.type.government", industrial: "zone.type.industrial", office: "zone.type.office", green: "zone.type.green", custom: "zone.type.custom" };
 
-function ZoneBadge({ icon, color, opacity = 1 }: { icon: string; color: string; opacity?: number }) { return <b className="zone-icon-badge"><svg viewBox="0 0 256 256"><circle cx="128" cy="128" r="124" fill={color} fillOpacity={opacity}/><path d={zoneIconPath(icon)} fill="#ffffff"/></svg></b>; }
+function ZoneBadge({ icon, color, opacity = 1 }: { icon: string; color: string; opacity?: number }) { const viewBox = zoneIconViewBox(icon); const [, , width = "256", height = "256"] = viewBox.split(/\s+/); return <b className="zone-icon-badge"><svg viewBox={viewBox}><rect width={width} height={height} rx={Number(width) / 2} fill={color} fillOpacity={opacity}/><path d={zoneIconPath(icon)} fill="#ffffff"/></svg></b>; }
 
 export function ZoneToolPalette({ editor, t }: { editor: Editor; t: (key: TranslationKey) => string }) {
   const store = useEditorStore();

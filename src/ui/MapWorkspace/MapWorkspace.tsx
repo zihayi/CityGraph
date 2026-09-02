@@ -13,6 +13,8 @@ import { RoadNameOverlay } from "./RoadNameOverlay";
 import { ZoneToolPalette } from "../ZoneToolPalette/ZoneToolPalette";
 import { ZoneLabelOverlay } from "./ZoneLabelOverlay";
 import { BuildingToolPalette } from "../BuildingToolPalette/BuildingToolPalette";
+import { FacilityToolPalette, facilityDragType } from "../FacilityToolPalette/FacilityToolPalette";
+import { FacilityOverlay } from "./FacilityOverlay";
 
 interface Props {
   editor: Editor; layers: LayerVisibility; tool: EditorTool; road: RoadToolSettings; zone: ZoneToolSettings; building: BuildingToolSettings; shortcuts: KeyboardShortcuts; inputEnabled: boolean; mapRef: RefObject<MapCanvasHandle | null>;
@@ -29,13 +31,15 @@ export function MapWorkspace(props: Props) {
   const scaleMeters = [1, 2, 5, 10].map((value) => value * magnitude).filter((value) => value <= targetMeters).at(-1) ?? magnitude;
   const scaleKilometers = scaleMeters / 1000;
   const formatKilometers = (value: number) => value >= 10 ? value.toFixed(0) : value >= 1 ? value.toFixed(1).replace(/\.0$/, "") : value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
-  return <main className="map-stage">
+  return <main className="map-stage" onDragOver={(event) => { if (event.target instanceof Element && event.target.closest(".map-host") && event.dataTransfer.types.includes(facilityDragType)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; } }} onDrop={(event) => { const value = event.dataTransfer.getData(facilityDragType); if (!value || !(event.target instanceof Element) || !event.target.closest(".map-host")) return; event.preventDefault(); try { const facility = JSON.parse(value) as { type: string; name: string; icon: string }; props.mapRef.current?.createFacilityAtClientPosition(event.clientX, event.clientY, facility.type, facility.name, facility.icon); } catch { /* Ignore malformed external drag data. */ } }}>
     <MapCanvas ref={props.mapRef} editor={props.editor} layers={props.layers} tool={props.tool} road={props.road} zone={props.zone} building={props.building} shortcuts={props.shortcuts} inputEnabled={props.inputEnabled} onZoomChange={(percent, scale) => { props.onZoomChange(percent); setPixelsPerMeter(scale); }} onRotationChange={onRotation} onCameraChange={setCamera} onValidation={props.onValidation} onRoadContextMenu={(menu) => { setRoadMenu(menu); if (menu) { setZoneMenu(undefined); setBuildingMenu(undefined); } }} onZoneContextMenu={(menu) => { setZoneMenu(menu); if (menu) { setRoadMenu(undefined); setBuildingMenu(undefined); } }} onBuildingContextMenu={(menu) => { setBuildingMenu(menu); if (menu) { setRoadMenu(undefined); setZoneMenu(undefined); } }} onRoadMeasurement={setMeasurement}/>
     {props.layers.roads && <RoadNameOverlay city={props.editor.state.city} camera={camera}/>}
     {props.layers.zoning && <ZoneLabelOverlay city={props.editor.state.city} camera={camera} opacity={props.zone.layerOpacity}/>}
+    {props.layers.facilities && <FacilityOverlay city={props.editor.state.city} camera={camera} selectedId={props.editor.selection?.kind === "facility" ? props.editor.selection.id : undefined}/>}
     {props.tool === "roads" && <RoadToolPalette t={props.t}/>}
     {props.tool === "zones" && <ZoneToolPalette editor={props.editor} t={props.t}/>}
     {props.tool === "buildings" && <BuildingToolPalette editor={props.editor} t={props.t}/>}
+    {props.tool === "public" && <FacilityToolPalette t={props.t}/>}
     {props.validation && <div className="validation-toast">{props.t(props.validation)}</div>}
     {measurement && <div className="road-measurement" style={{ left: measurement.x, top: measurement.y }}>{measurement.text}</div>}
     {roadMenu && <div className="road-context-menu glass-panel" style={{ left: roadMenu.x, top: roadMenu.y }}><button type="button" disabled={!roadMenu.canAdd} onClick={() => { const nodeId = props.editor.splitRoadEdge(roadMenu.edgeId, roadMenu.point); props.editor.select({ kind: "node", id: nodeId }); setRoadMenu(undefined); }}>+ {props.t("road.node.add")}</button><button type="button" disabled={!roadMenu.canDelete || !roadMenu.nodeId} onClick={() => { if (roadMenu.nodeId) props.editor.dissolveRoadNode(roadMenu.nodeId); setRoadMenu(undefined); }}>- {props.t("road.node.delete")}</button></div>}

@@ -275,6 +275,7 @@ export function createDemoCity(): City {
       { id: "poi-school", x: 1265, y: 160, type: "school", name: "Northfield School" },
       { id: "poi-harbor", x: 820, y: 790, type: "harbor", name: "Harbor Terminal" },
     ],
+    facilities: [],
     transitStations: [
       { id: "station-west", x: 330, y: 475, type: "train", name: "Westgate" },
       { id: "station-civic", x: 790, y: 485, type: "metro", name: "Civic Center" },

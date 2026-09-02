@@ -58,11 +58,12 @@ describe("SaveManager", () => {
     city.buildings.push({ id: "building", footprint: { outer: [{ x: 20, y: 30 }, { x: 40, y: 30 }, { x: 40, y: 50 }, { x: 20, y: 50 }], holes: [[{ x: 26, y: 36 }, { x: 26, y: 44 }, { x: 34, y: 44 }, { x: 34, y: 36 }]] }, type: "residential", subtype: "Apartment", floors: 4, height: 14, style: "chinese" });
     city.roads[0]!.description = "Old market route"; city.buildings[0]!.description = "A beloved corner shop";
     city.labels.push({ id: "label", x: 20, y: 30, text: "Center", type: "custom" });
+    city.facilities.push({ id: "facility", type: "coffee-shop", name: "Manner Coffee", position: { x: 42, y: 38 }, icon: "coffee-shop.svg" });
     city.zones.push({ id: "zone", name: "Campus", description: "Founded beside the river", type: "education", polygon: [{ x: 0, y: 0 }, { x: 80, y: 0 }, { x: 40, y: 60 }], source: "custom", opacity: 0.45, color: "#9fbfd0", icon: "graduation-cap", iconColor: "#fff4d0", iconOpacity: 0.65 });
     const camera = { x: 10, y: 20, zoom: 0.5, rotation: 0.83 };
     await new SaveManager().saveAs("Lake City", city, camera);
     const folder = saves.directories.get("Lake City");
-    expect([...folder!.files.keys()].sort()).toEqual(["buildings.json", "map.json", "metadata.json", "roads.json", "zones.json"]);
+    expect([...folder!.files.keys()].sort()).toEqual(["buildings.json", "facilities.json", "map.json", "metadata.json", "roads.json", "zones.json"]);
     expect(folder!.directories.has("assets")).toBe(true);
 
     const loaded = await new SaveManager().load();
@@ -73,6 +74,7 @@ describe("SaveManager", () => {
     expect(roadIdentityGroupEdges(loaded.city, loaded.city.roadEdges[0]!)).toHaveLength(2);
     expect(loaded.city.buildings[0]).toEqual(city.buildings[0]); expect(JSON.parse(folder!.files.get("map.json")!.content).buildings).toBeUndefined(); expect(loaded.city.roads[0]?.description).toBe("Old market route"); expect(loaded.city.labels[0]?.text).toBe("Center");
     expect(loaded.city.zones[0]).toEqual(city.zones[0]);
+    expect(loaded.city.facilities[0]).toEqual(city.facilities[0]);
     expect(loaded.camera.rotation).toBe(camera.rotation);
   });
 
@@ -83,6 +85,12 @@ describe("SaveManager", () => {
     folder.files.set("roads.json", Object.assign(new MemoryFile(), { content: "{}" }));
     installSaveFolder(folder);
     await expect(new SaveManager().load()).rejects.toMatchObject({ code: "version", version: 99 });
+  });
+
+  it("rejects a malformed facilities document in the current format", async () => {
+    const saves = new MemoryDirectory(); installStorage(saves); const city = createNewCity({ name: "Invalid Facilities", size: "small", terrain: "flat", lakeCount: 1 }); await new SaveManager().saveAs(city.name, city, { x: 0, y: 0, zoom: 1, rotation: 0 });
+    saves.directories.get(city.name)!.files.get("facilities.json")!.content = "{}";
+    await expect(new SaveManager().load()).rejects.toMatchObject({ code: "invalid" });
   });
 
   it("migrates version 2 edge-based road saves", async () => {

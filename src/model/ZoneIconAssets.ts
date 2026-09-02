@@ -1,18 +1,41 @@
-import bookRaw from "../../assets/zone/book-open-text.svg?raw";
-import briefcaseRaw from "../../assets/zone/briefcase.svg?raw";
-import officeRaw from "../../assets/zone/building-office.svg?raw";
-import coffeeRaw from "../../assets/zone/coffee.svg?raw";
-import factoryRaw from "../../assets/zone/factory.svg?raw";
-import medicalRaw from "../../assets/zone/first-aid.svg?raw";
-import foodRaw from "../../assets/zone/fork-knife.svg?raw";
-import educationRaw from "../../assets/zone/graduation-cap.svg?raw";
-import houseRaw from "../../assets/zone/house-line.svg?raw";
-import parkingRaw from "../../assets/zone/letter-circle-p.svg?raw";
-import parkRaw from "../../assets/zone/park.svg?raw";
-import commercialRaw from "../../assets/zone/shopping-bag-open.svg?raw";
-
-const zoneIconRaw: Record<string, string> = { "book-open-text": bookRaw, briefcase: briefcaseRaw, "building-office": officeRaw, coffee: coffeeRaw, factory: factoryRaw, "first-aid": medicalRaw, "fork-knife": foodRaw, "graduation-cap": educationRaw, "house-line": houseRaw, "letter-circle-p": parkingRaw, park: parkRaw, "shopping-bag-open": commercialRaw };
-
-export function zoneIconPath(icon: string): string {
-  return (zoneIconRaw[icon] ?? zoneIconRaw["letter-circle-p"]!).match(/<path\s+d="([^"]+)"/)?.[1] ?? "";
+interface ZoneIconAsset {
+  path: string;
+  viewBox: string;
 }
+
+const iconModules = import.meta.glob<string>("../../assets/zone/*.svg", {
+  eager: true,
+  query: "?raw",
+  import: "default",
+});
+
+const assets = new Map<string, ZoneIconAsset>(Object.entries(iconModules).map(([file, raw]) => {
+  const id = (file.split("/").at(-1) ?? "custom.svg").replace(/\.svg$/i, "");
+  return [id, {
+    path: raw.match(/<path\b[^>]*\bd=["']([^"']+)["']/i)?.[1] ?? "",
+    viewBox: raw.match(/\bviewBox=["']([^"']+)["']/i)?.[1] ?? "0 0 256 256",
+  }];
+}));
+
+const legacyAliases: Record<string, string> = {
+  "book-open-text": "education",
+  briefcase: "office",
+  "building-office": "government",
+  coffee: "commercial",
+  factory: "industrial",
+  "first-aid": "medical",
+  "fork-knife": "commercial",
+  "graduation-cap": "education",
+  "house-line": "residential",
+  "letter-circle-p": "custom",
+  "shopping-bag-open": "commercial",
+};
+
+export const zoneIconIds = [...assets.keys()].sort();
+
+function zoneIconAsset(icon: string): ZoneIconAsset {
+  return assets.get(icon) ?? assets.get(legacyAliases[icon] ?? "") ?? assets.get("custom") ?? { path: "", viewBox: "0 0 256 256" };
+}
+
+export function zoneIconPath(icon: string): string { return zoneIconAsset(icon).path; }
+export function zoneIconViewBox(icon: string): string { return zoneIconAsset(icon).viewBox; }

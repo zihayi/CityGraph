@@ -68,6 +68,7 @@ export class MapRenderer {
     this.addLayer("water", new WaterRenderer().render(city)); this.addLayer("parks", new ParkRenderer().render(city));
     this.addLayer("buildings", new BuildingRenderer().render(city)); this.addLayer("roads", new RoadRenderer().render(city));
     this.addLayer("transit", new TransitRenderer().render(city)); this.addLayer("poi", new POIRenderer().render(city));
+    this.addLayer("facilities", new Container());
     this.addLayer("labels", new LabelRenderer().render(city)); this.addLayer("grid", new GridRenderer().render(city));
     this.world.addChild(this.editorOverlay, this.zoneOverlay, this.buildingOverlay, this.snapOverlay); this.setVisibility(this.visibility);
   }

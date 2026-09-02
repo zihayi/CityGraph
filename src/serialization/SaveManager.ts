@@ -1,11 +1,11 @@
 import type { CameraState } from "../map/MapViewport";
-import type { City, MapSize, Road, RoadCategory, RoadEdge, RoadNode, RoadStructure, RoadSubtype, TerrainType, WaterArea, Zone } from "../model/City";
+import type { City, FacilityPOI, MapSize, Road, RoadCategory, RoadEdge, RoadNode, RoadStructure, RoadSubtype, TerrainType, WaterArea, Zone } from "../model/City";
 import type { Building, BuildingStyle, BuildingType } from "../model/City";
 import { isValidBuildingFootprint } from "../geometry/BuildingGeometry";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { appDataDir, join } from "@tauri-apps/api/path";
 
-const FORMAT_VERSION = 6;
+const FORMAT_VERSION = 7;
 const GAME_VERSION = "0.2.0";
 
 interface MetadataDocument {
@@ -33,6 +33,7 @@ interface MapDocument {
 interface RoadsDocument { roadNodes: RoadNode[]; roads: Road[]; roadEdges: RoadEdge[] }
 interface ZonesDocument { zones: Zone[] }
 interface BuildingsDocument { buildings: Building[] }
+interface FacilitiesDocument { facilities: FacilityPOI[] }
 interface ManagedSaveSlot { folderName: string; updatedAt: string; autosave: boolean }
 export interface AutoSaveOptions { maxSlots: number; retentionDays: number }
 export interface LoadedSave { city: City; camera: CameraState; saveName: string }
@@ -59,6 +60,7 @@ function isZone(value: unknown): value is Zone { return isRecord(value) && typeo
 const buildingTypes: BuildingType[] = ["residential", "commercial", "education", "medical", "government", "industrial", "office", "public", "custom"];
 const buildingStyles: BuildingStyle[] = ["modern", "chinese", "classical", "industrial", "custom"];
 function isBuilding(value: unknown): value is Building { if (!isRecord(value) || typeof value.id !== "string" || !buildingTypes.includes(value.type as BuildingType) || typeof value.subtype !== "string" || typeof value.floors !== "number" || !Number.isFinite(value.floors) || value.floors < 1 || typeof value.height !== "number" || !Number.isFinite(value.height) || value.height < 1 || !buildingStyles.includes(value.style as BuildingStyle) || !isRecord(value.footprint) || !Array.isArray(value.footprint.outer) || !value.footprint.outer.every(isPoint) || !Array.isArray(value.footprint.holes) || !value.footprint.holes.every((hole) => Array.isArray(hole) && hole.every(isPoint))) return false; const footprint = { outer: value.footprint.outer, holes: value.footprint.holes } as Building["footprint"]; return (value.name === undefined || typeof value.name === "string") && (value.description === undefined || typeof value.description === "string") && isValidBuildingFootprint(footprint); }
+function isFacility(value: unknown): value is FacilityPOI { return isRecord(value) && typeof value.id === "string" && typeof value.type === "string" && Boolean(value.type) && typeof value.name === "string" && typeof value.icon === "string" && isPoint(value.position); }
 function migrateLegacyBuilding(value: unknown): Building | undefined { if (!isRecord(value) || typeof value.id !== "string" || !buildingTypes.includes(value.type as BuildingType) || ![value.x, value.y, value.width, value.height, value.rotation].every((entry) => typeof entry === "number" && Number.isFinite(entry)) || Number(value.width) <= 0 || Number(value.height) <= 0) return undefined; const x = Number(value.x); const y = Number(value.y); const width = Number(value.width); const depth = Number(value.height); const rotation = Number(value.rotation); const cos = Math.cos(rotation); const sin = Math.sin(rotation); const local = [{ x: 0, y: 0 }, { x: width, y: 0 }, { x: width, y: depth }, { x: 0, y: depth }]; return { id: value.id, footprint: { outer: local.map((point) => ({ x: x + point.x * cos - point.y * sin, y: y + point.x * sin + point.y * cos })), holes: [] }, type: value.type as BuildingType, subtype: "", floors: 1, height: 3, style: "modern", name: typeof value.name === "string" ? value.name : undefined, description: typeof value.description === "string" ? value.description : undefined }; }
 
 export class SaveManager {
@@ -112,9 +114,9 @@ export class SaveManager {
     if (isTauri()) {
       try {
         const parent = await this.desktopSavesPath(); const slots = await invoke<ManagedSaveSlot[]>("list_city_saves", { parentPath: parent }); const slot = this.preferredSlot(slots); if (!slot) throw new SaveError("failed"); const folder = await join(parent, slot.folderName);
-        const files = await invoke<{ metadata: string; map: string; roads: string; zones: string; buildings?: string | null }>("load_city_files", { folderPath: folder });
-        const metadata = JSON.parse(files.metadata) as unknown; const map = JSON.parse(files.map) as unknown; const roads = JSON.parse(files.roads) as unknown; const zones = JSON.parse(files.zones) as unknown; const buildings = files.buildings ? JSON.parse(files.buildings) as unknown : undefined;
-        const loaded = this.parse(metadata, map, roads, zones, buildings);
+        const files = await invoke<{ metadata: string; map: string; roads: string; zones: string; buildings?: string | null; facilities?: string | null }>("load_city_files", { folderPath: folder });
+        const metadata = JSON.parse(files.metadata) as unknown; const map = JSON.parse(files.map) as unknown; const roads = JSON.parse(files.roads) as unknown; const zones = JSON.parse(files.zones) as unknown; const buildings = files.buildings ? JSON.parse(files.buildings) as unknown : undefined; const facilities = files.facilities ? JSON.parse(files.facilities) as unknown : undefined;
+        const loaded = this.parse(metadata, map, roads, zones, buildings, facilities);
         this.desktopParentPath = parent; this.desktopFolderName = slot.autosave ? undefined : slot.folderName;
         this.createdAt = slot.autosave ? undefined : String((metadata as Record<string, unknown>).createdAt); this.currentSaveName = slot.autosave ? undefined : loaded.saveName;
         return loaded;
@@ -126,7 +128,7 @@ export class SaveManager {
       const map = await this.readJson(directory, "map.json");
       const roads = await this.readJson(directory, "roads.json");
       const zones = await this.readOptionalJson(directory, "zones.json", { zones: [] });
-      const buildings = await this.readOptionalJson(directory, "buildings.json", undefined); const loaded = this.parse(metadata, map, roads, zones, buildings);
+      const buildings = await this.readOptionalJson(directory, "buildings.json", undefined); const facilities = await this.readOptionalJson(directory, "facilities.json", undefined); const loaded = this.parse(metadata, map, roads, zones, buildings, facilities);
       this.saveDirectory = slot.autosave ? undefined : directory; this.createdAt = slot.autosave ? undefined : String((metadata as Record<string, unknown>).createdAt); this.currentSaveName = slot.autosave ? undefined : loaded.saveName;
       return loaded;
     } catch (error) { return this.translateError(error); }
@@ -142,7 +144,7 @@ export class SaveManager {
     await this.invokeDesktopWrite(this.desktopParentPath, this.desktopFolderName, this.createDocuments(city, camera, saveName));
   }
 
-  private createDocuments(city: City, camera: CameraState, saveName: string, createdAt = this.createdAt, autosave = false): { metadata: MetadataDocument; map: MapDocument; roads: RoadsDocument; zones: ZonesDocument; buildings: BuildingsDocument } {
+  private createDocuments(city: City, camera: CameraState, saveName: string, createdAt = this.createdAt, autosave = false): { metadata: MetadataDocument; map: MapDocument; roads: RoadsDocument; zones: ZonesDocument; buildings: BuildingsDocument; facilities: FacilitiesDocument } {
     const now = new Date().toISOString();
     return {
       metadata: { formatVersion: FORMAT_VERSION, gameVersion: GAME_VERSION, saveName, mapName: city.name, createdAt: createdAt ?? now, updatedAt: now, autosave },
@@ -150,11 +152,12 @@ export class SaveManager {
       roads: { roadNodes: city.roadNodes, roads: city.roads, roadEdges: city.roadEdges },
       zones: { zones: city.zones },
       buildings: { buildings: city.buildings },
+      facilities: { facilities: city.facilities },
     };
   }
 
-  private async writeDocuments(directory: FileSystemDirectoryHandle, documents: ReturnType<SaveManager["createDocuments"]>): Promise<void> { await this.writeJson(directory, "buildings.json", documents.buildings); await Promise.all([this.writeJson(directory, "map.json", documents.map), this.writeJson(directory, "roads.json", documents.roads), this.writeJson(directory, "zones.json", documents.zones)]); await directory.getDirectoryHandle("assets", { create: true }); await this.writeJson(directory, "metadata.json", documents.metadata); }
-  private async invokeDesktopWrite(parentPath: string, folderName: string, documents: ReturnType<SaveManager["createDocuments"]>): Promise<void> { await invoke<string>("save_city_files", { parentPath, folderName, metadata: JSON.stringify(documents.metadata, null, 2), map: JSON.stringify(documents.map, null, 2), roads: JSON.stringify(documents.roads, null, 2), zones: JSON.stringify(documents.zones, null, 2), buildings: JSON.stringify(documents.buildings, null, 2) }); }
+  private async writeDocuments(directory: FileSystemDirectoryHandle, documents: ReturnType<SaveManager["createDocuments"]>): Promise<void> { await Promise.all([this.writeJson(directory, "buildings.json", documents.buildings), this.writeJson(directory, "facilities.json", documents.facilities), this.writeJson(directory, "map.json", documents.map), this.writeJson(directory, "roads.json", documents.roads), this.writeJson(directory, "zones.json", documents.zones)]); await directory.getDirectoryHandle("assets", { create: true }); await this.writeJson(directory, "metadata.json", documents.metadata); }
+  private async invokeDesktopWrite(parentPath: string, folderName: string, documents: ReturnType<SaveManager["createDocuments"]>): Promise<void> { await invoke<string>("save_city_files", { parentPath, folderName, metadata: JSON.stringify(documents.metadata, null, 2), map: JSON.stringify(documents.map, null, 2), roads: JSON.stringify(documents.roads, null, 2), zones: JSON.stringify(documents.zones, null, 2), buildings: JSON.stringify(documents.buildings, null, 2), facilities: JSON.stringify(documents.facilities, null, 2) }); }
   private async desktopSavesPath(): Promise<string> { return join(await appDataDir(), "saves"); }
   private async browserSavesDirectory(): Promise<FileSystemDirectoryHandle> { const storage = navigator.storage as StorageManager & { getDirectory?: () => Promise<FileSystemDirectoryHandle> }; if (!storage.getDirectory) throw new SaveError("unsupported"); const root = await storage.getDirectory(); const app = await root.getDirectoryHandle("CityGraph", { create: true }); return app.getDirectoryHandle("saves", { create: true }); }
   private preferredSlot(slots: ManagedSaveSlot[]): ManagedSaveSlot | undefined { return [...slots].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0]; }
@@ -168,11 +171,11 @@ export class SaveManager {
   private async readJson(directory: FileSystemDirectoryHandle, name: string): Promise<unknown> { const handle = await directory.getFileHandle(name); return JSON.parse(await (await handle.getFile()).text()) as unknown; }
   private async readOptionalJson(directory: FileSystemDirectoryHandle, name: string, fallback: unknown): Promise<unknown> { try { return await this.readJson(directory, name); } catch { return fallback; } }
 
-  private parse(metadataValue: unknown, mapValue: unknown, roadsValue: unknown, zonesValue: unknown = { zones: [] }, buildingsValue?: unknown): LoadedSave {
+  private parse(metadataValue: unknown, mapValue: unknown, roadsValue: unknown, zonesValue: unknown = { zones: [] }, buildingsValue?: unknown, facilitiesValue?: unknown): LoadedSave {
     if (!isRecord(metadataValue) || !isRecord(mapValue) || !isRecord(roadsValue) || !isRecord(zonesValue)) throw new SaveError("invalid");
     const version = metadataValue.formatVersion;
     if (typeof version !== "number") throw new SaveError("invalid");
-    if (version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== FORMAT_VERSION) throw new SaveError("version", version);
+    if (version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== FORMAT_VERSION) throw new SaveError("version", version);
     const bounds = mapValue.worldBounds;
     const camera = mapValue.camera;
     if (!isRecord(bounds) || !isRecord(camera) || !["small", "medium", "large", "unlimited"].includes(String(mapValue.mapSize)) || !["flat", "lakes"].includes(String(mapValue.terrain))) throw new SaveError("invalid");
@@ -196,6 +199,7 @@ export class SaveManager {
     if (roads.some((road) => road.segmentIds.some((edgeId) => !edgeIds.has(edgeId) || roadEdges.find((edge) => edge.id === edgeId)?.roadId !== road.id)) || roadEdges.some((edge) => !roads.find((road) => road.id === edge.roadId)?.segmentIds.includes(edge.id))) throw new SaveError("invalid");
     const zones = Array.isArray(zonesValue.zones) ? zonesValue.zones : []; if (!zones.every(isZone) || new Set(zones.map((zone) => zone.id)).size !== zones.length) throw new SaveError("invalid");
     let buildings: Building[]; if (isRecord(buildingsValue) && Array.isArray(buildingsValue.buildings)) { if (!buildingsValue.buildings.every(isBuilding)) throw new SaveError("invalid"); buildings = buildingsValue.buildings as Building[]; } else if (version === FORMAT_VERSION) throw new SaveError("invalid"); else { const legacy = Array.isArray(mapValue.buildings) ? mapValue.buildings : []; buildings = legacy.map(migrateLegacyBuilding).filter((building): building is Building => Boolean(building)); if (buildings.length !== legacy.length) throw new SaveError("invalid"); } if (new Set(buildings.map((building) => building.id)).size !== buildings.length) throw new SaveError("invalid");
+    if (version === FORMAT_VERSION && (!isRecord(facilitiesValue) || !Array.isArray(facilitiesValue.facilities))) throw new SaveError("invalid"); const facilities = isRecord(facilitiesValue) && Array.isArray(facilitiesValue.facilities) ? facilitiesValue.facilities : []; if (!facilities.every(isFacility) || new Set(facilities.map((facility) => facility.id)).size !== facilities.length) throw new SaveError("invalid");
     const city: City = {
       id: crypto.randomUUID(), name: String(metadataValue.mapName || "Loaded City"), bounds: bounds as unknown as City["bounds"], mapSize: mapValue.mapSize as MapSize, terrain: mapValue.terrain as TerrainType,
       waters: mapValue.water as WaterArea[], roadNodes, roads, roadEdges,
@@ -204,6 +208,7 @@ export class SaveManager {
       zones: zones as Zone[],
       parks: Array.isArray(mapValue.parks) ? mapValue.parks as City["parks"] : [],
       pois: Array.isArray(mapValue.pois) ? mapValue.pois as City["pois"] : [],
+      facilities: facilities as FacilityPOI[],
       transitLines: Array.isArray(mapValue.transitLines) ? mapValue.transitLines as City["transitLines"] : [],
       transitStations: Array.isArray(mapValue.transitStations) ? mapValue.transitStations as City["transitStations"] : [],
       labels: Array.isArray(mapValue.labels) ? mapValue.labels as City["labels"] : [],

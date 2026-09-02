@@ -118,6 +118,14 @@ export interface POI extends Point {
   name: string;
 }
 
+export interface FacilityPOI {
+  id: string;
+  type: string;
+  name: string;
+  position: Point;
+  icon: string;
+}
+
 export interface TransitStation extends Point {
   id: string;
   type: TransitType;
@@ -152,6 +160,7 @@ export interface City {
   parks: Park[];
   waters: WaterArea[];
   pois: POI[];
+  facilities: FacilityPOI[];
   transitLines: TransitLine[];
   transitStations: TransitStation[];
   labels: MapLabel[];

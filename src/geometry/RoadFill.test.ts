@@ -5,7 +5,7 @@ import { zoneArea } from "./ZoneGeometry";
 
 function square(structure: RoadStructure = "ground"): City {
   const points = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }];
-  return { id: "fill", name: "Fill", bounds: { x: -50, y: -50, width: 200, height: 200 }, mapSize: "small", terrain: "flat", roadNodes: points.map((point, index) => ({ id: `n${index}`, ...point })), roads: points.map((_, index) => ({ id: `r${index}`, name: "", category: "normal", subtype: "small", width: 10, segmentIds: [`e${index}`] })), roadEdges: points.map((_, index) => ({ id: `e${index}`, roadId: `r${index}`, name: "", startNodeId: `n${index}`, endNodeId: `n${(index + 1) % points.length}`, structure, level: structure === "ground" ? 0 : structure === "elevated" ? 1 : -1, geometry: { type: "line" } })), buildings: [], blocks: [], zones: [], parks: [], waters: [], pois: [], transitLines: [], transitStations: [], labels: [] };
+  return { id: "fill", name: "Fill", bounds: { x: -50, y: -50, width: 200, height: 200 }, mapSize: "small", terrain: "flat", roadNodes: points.map((point, index) => ({ id: `n${index}`, ...point })), roads: points.map((_, index) => ({ id: `r${index}`, name: "", category: "normal", subtype: "small", width: 10, segmentIds: [`e${index}`] })), roadEdges: points.map((_, index) => ({ id: `e${index}`, roadId: `r${index}`, name: "", startNodeId: `n${index}`, endNodeId: `n${(index + 1) % points.length}`, structure, level: structure === "ground" ? 0 : structure === "elevated" ? 1 : -1, geometry: { type: "line" } })), buildings: [], blocks: [], zones: [], parks: [], waters: [], pois: [], facilities: [], transitLines: [], transitStations: [], labels: [] };
 }
 
 describe("road fill", () => {

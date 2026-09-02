@@ -12,7 +12,7 @@ function city(): City {
       { id: "new", category: "normal", subtype: "small", width: 8, name: "New", segmentIds: ["new-edge"] },
     ],
     roadEdges: [{ id: "old-edge", roadId: "old", name: "Old", startNodeId: "a", endNodeId: "b", structure: "ground", level: 0, geometry: { type: "line" } }, { id: "new-edge", roadId: "new", name: "New", startNodeId: "c", endNodeId: "d", structure: "ground", level: 0, geometry: { type: "line" } }],
-    buildings: [], blocks: [], zones: [], parks: [], waters: [], pois: [], transitLines: [], transitStations: [], labels: [],
+    buildings: [], blocks: [], zones: [], parks: [], waters: [], pois: [], facilities: [], transitLines: [], transitStations: [], labels: [],
   };
 }
 
@@ -91,4 +91,11 @@ describe("Editor road endpoint merging", () => {
   });
 
   it("supports the polygon building command lifecycle with undo", () => { const editor = new Editor(city()); const id = editor.createBuilding({ footprint: { outer: [{ x: 30, y: 40 }, { x: 50, y: 40 }, { x: 50, y: 55 }, { x: 30, y: 55 }], holes: [] }, type: "government", subtype: "City Hall", floors: 3, height: 12, style: "classical", name: "Hall" })!; editor.updateBuilding(id, { description: "The clock rings at noon" }); expect(editor.state.city.buildings[0]?.description).toBe("The clock rings at noon"); editor.addBuildingVertex(id, 0, 0, { x: 40, y: 40 }); expect(editor.state.city.buildings[0]?.footprint.outer).toHaveLength(5); editor.deleteBuildingVertex(id, 0, 1); expect(editor.state.city.buildings[0]?.footprint.outer).toHaveLength(4); const duplicate = editor.duplicateBuilding(id)!; expect(editor.state.city.buildings).toHaveLength(2); editor.rotateBuilding(duplicate, Math.PI / 4); editor.scaleBuilding(duplicate, 1.2); editor.mirrorBuilding(duplicate); editor.deleteSelected(); expect(editor.state.city.buildings).toHaveLength(1); editor.undo(); expect(editor.state.city.buildings).toHaveLength(2); });
+
+  it("supports facility create, move, rename and delete with undo and redo", () => {
+    const editor = new Editor(city()); const id = editor.createFacility({ type: "coffee-shop", name: "Coffee Shop", position: { x: 20, y: 30 }, icon: "coffee-shop.svg" });
+    expect(editor.selection).toEqual({ kind: "facility", id }); editor.updateFacility(id, { name: "Manner Coffee" }); expect(editor.state.city.facilities[0]).toMatchObject({ type: "coffee-shop", name: "Manner Coffee", icon: "coffee-shop.svg" });
+    editor.state.city.facilities[0]!.position = { x: 80, y: 90 }; editor.moveFacility(id, { x: 20, y: 30 }); expect(editor.state.city.facilities[0]!.position).toEqual({ x: 80, y: 90 }); editor.undo(); expect(editor.state.city.facilities[0]!.position).toEqual({ x: 20, y: 30 }); editor.redo();
+    editor.deleteSelected(); expect(editor.state.city.facilities).toHaveLength(0); editor.undo(); expect(editor.state.city.facilities[0]?.name).toBe("Manner Coffee"); editor.undo(); expect(editor.state.city.facilities[0]?.position).toEqual({ x: 20, y: 30 }); editor.undo(); expect(editor.state.city.facilities[0]?.name).toBe("Coffee Shop"); editor.undo(); expect(editor.state.city.facilities).toHaveLength(0); editor.redo(); expect(editor.state.city.facilities[0]?.type).toBe("coffee-shop");
+  });
 });

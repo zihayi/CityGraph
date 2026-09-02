@@ -5,7 +5,7 @@ import { buildRoadCreation, splitRoadEdge } from "./RoadGraph";
 import { connectedRoadEdgeComponents, roadIdentityGroupEdges } from "./RoadIdentity";
 
 function emptyCity(): City {
-  return { id: "identity", name: "Identity", bounds: { x: -200, y: -200, width: 800, height: 800 }, mapSize: "small", terrain: "flat", roadNodes: [], roads: [], roadEdges: [], buildings: [], blocks: [], zones: [], parks: [], waters: [], pois: [], transitLines: [], transitStations: [], labels: [] };
+  return { id: "identity", name: "Identity", bounds: { x: -200, y: -200, width: 800, height: 800 }, mapSize: "small", terrain: "flat", roadNodes: [], roads: [], roadEdges: [], buildings: [], blocks: [], zones: [], parks: [], waters: [], pois: [], facilities: [], transitLines: [], transitStations: [], labels: [] };
 }
 function add(city: City, start: { x: number; y: number }, end: { x: number; y: number }, name: string): City {
   const result = buildRoadCreation(city, { start, end, category: "normal", subtype: "small", width: 8, name, structure: "ground", geometry: { type: "line" } });

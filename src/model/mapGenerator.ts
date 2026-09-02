@@ -62,6 +62,6 @@ export function createNewCity(options: NewMapOptions): City {
     mapSize: options.size,
     terrain: options.terrain,
     roadNodes: [], roads: [], roadEdges: [], buildings: [], blocks: [], zones: [], parks: [], waters,
-    pois: [], transitLines: [], transitStations: [], labels: [],
+    pois: [], facilities: [], transitLines: [], transitStations: [], labels: [],
   };
 }

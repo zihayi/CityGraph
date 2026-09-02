@@ -11,7 +11,7 @@ import { pointInPolygon } from "../geometry/Polygon";
 import { nearestPointOnSegment } from "../geometry/Segment";
 import { nearestZoneSegment } from "../geometry/ZoneGeometry";
 import type { Point } from "../geometry/Point";
-import type { Building, BuildingStyle, BuildingType, RoadCategory, RoadGeometry, RoadStructure, RoadSubtype, ZoneType } from "../model/City";
+import type { Building, BuildingStyle, BuildingType, FacilityPOI, RoadCategory, RoadGeometry, RoadStructure, RoadSubtype, ZoneType } from "../model/City";
 import { createBuildingPreset, dragFootprintEdge, extrudeFootprintEdge, footprintContainsPoint, footprintEdgeOutwardNormal, isValidBuildingFootprint, nearestFootprintEdge, translateFootprint, type BuildingPreset, type FootprintEdge } from "../geometry/BuildingGeometry";
 import { MapCamera } from "./MapCamera";
 import { MapRenderer } from "./MapRenderer";
@@ -41,7 +41,7 @@ interface MapViewportOptions {
   onRoadMeasurement?: (measurement?: { x: number; y: number; text: string }) => void;
 }
 
-type Gesture = "pan" | "rotate" | "node" | "road" | "zone" | "zone-vertex" | "building" | "building-vertex" | "building-edge" | null;
+type Gesture = "pan" | "rotate" | "node" | "road" | "zone" | "zone-vertex" | "building" | "building-vertex" | "building-edge" | "facility" | null;
 
 export class MapViewport {
   private readonly app = new Application();
@@ -63,6 +63,7 @@ export class MapViewport {
   private draggedRoad?: { roadId: string; beforePositions: Array<{ id: string; x: number; y: number }>; beforeGeometries: Array<{ id: string; geometry: RoadGeometry }> };
   private draggedZone?: { id: string; beforePolygon: Point[]; vertexIndex?: number };
   private draggedBuilding?: { id: string; beforeFootprint: Building["footprint"]; startWorld: Point; vertex?: { ringIndex: number; vertexIndex: number }; edge?: FootprintEdge };
+  private draggedFacility?: { id: string; beforePosition: Point; pointerOffset: Point };
   private roadStart?: { point: Point; nodeId?: string; name?: string; roadId?: string };
   private curveMidpoint?: Point;
   private shapeCenter?: Point;
@@ -110,6 +111,11 @@ export class MapViewport {
   public resetView(): void { this.fitCity(); }
   public getCameraState(): CameraState { return { x: this.camera.x, y: this.camera.y, zoom: this.camera.zoom, rotation: this.camera.rotation }; }
   public setCameraState(state: CameraState): void { this.camera.setState(state); this.applyCamera(); }
+  public createFacilityAtClientPosition(clientX: number, clientY: number, type: string, name: string, icon: string): string | undefined {
+    if (!this.options.inputEnabled || !this.options.layers.facilities || !this.canvas) return undefined;
+    const rect = this.canvas.getBoundingClientRect(); const position = this.camera.screenToMap({ x: clientX - rect.left, y: clientY - rect.top });
+    return this.editor.createFacility({ type, name, icon, position });
+  }
   public northUp(): void {
     cancelAnimationFrame(this.northAnimation); const start = this.camera.rotation; const started = performance.now();
     const tick = (now: number) => { const t = Math.min(1, (now - started) / 280); const eased = 1 - (1 - t) ** 3; this.camera.rotateAt(start * (1 - eased), { x: this.viewportWidth / 2, y: this.viewportHeight / 2 }); this.applyCamera(); if (t < 1) this.northAnimation = requestAnimationFrame(tick); };
@@ -180,6 +186,11 @@ export class MapViewport {
       const building = this.pickBuilding(screen); if (building) { this.editor.select({ kind: "building", id: building.id }); this.draggedBuilding = { id: building.id, beforeFootprint: structuredClone(building.footprint), startWorld: this.camera.screenToMap(screen) }; this.gesture = "building"; this.canvas?.classList.add("is-moving-building"); return; }
       this.editor.select(null); this.gesture = "pan"; this.canvas?.classList.add("is-panning"); return;
     }
+    if (this.options.tool === "select" || this.options.tool === "public") {
+      const facility = this.pickFacility(screen);
+      if (facility) { const pointer = this.camera.screenToMap(screen); this.editor.select({ kind: "facility", id: facility.id }); this.draggedFacility = { id: facility.id, beforePosition: { ...facility.position }, pointerOffset: { x: facility.position.x - pointer.x, y: facility.position.y - pointer.y } }; this.gesture = "facility"; this.canvas?.classList.add("is-moving-facility"); return; }
+      if (this.options.tool === "public") { this.editor.select(null); this.gesture = "pan"; this.canvas?.classList.add("is-panning"); return; }
+    }
     if (this.options.tool === "select") {
       const node = this.pickEditableNode(screen, 12);
       if (node) { this.editor.select({ kind: "node", id: node.id }); this.draggedNode = { id: node.id, before: { x: node.x, y: node.y } }; this.gesture = "node"; return; }
@@ -228,6 +239,10 @@ export class MapViewport {
         else if (this.gesture === "building-edge" && this.draggedBuilding.edge) { const edge = this.draggedBuilding.edge; if (this.options.building.extrude && edge.ringIndex === 0) { const normal = footprintEdgeOutwardNormal(footprint, edge.edgeIndex); const amount = normal ? delta.x * normal.x + delta.y * normal.y : 0; footprint = extrudeFootprintEdge(footprint, edge.edgeIndex, amount) ?? footprint; } else footprint = dragFootprintEdge(footprint, edge, delta) ?? footprint; }
         if (isValidBuildingFootprint(footprint)) { building.footprint = footprint; this.options.onValidation?.(); } else this.options.onValidation?.("building.invalid"); this.renderer?.refreshBuildings(this.editor.selection); if (this.draggedBuilding.edge) this.renderer?.setBuildingEdge(this.draggedBuilding.edge, this.editor.selection); }
     }
+    else if (this.gesture === "facility" && this.draggedFacility) {
+      const facility = this.editor.state.city.facilities.find((candidate) => candidate.id === this.draggedFacility?.id);
+      if (facility) { const pointer = this.camera.screenToMap(current); facility.position = { x: pointer.x + this.draggedFacility.pointerOffset.x, y: pointer.y + this.draggedFacility.pointerOffset.y }; }
+    }
     this.previousPointer = current; this.applyCamera();
   };
   private handlePointerUp = (event: PointerEvent): void => {
@@ -239,9 +254,10 @@ export class MapViewport {
     else if (this.gesture === "building" && this.draggedBuilding) this.editor.commitBuildingFootprint(this.draggedBuilding.id, this.draggedBuilding.beforeFootprint, "Move building");
     else if (this.gesture === "building-vertex" && this.draggedBuilding) this.editor.commitBuildingFootprint(this.draggedBuilding.id, this.draggedBuilding.beforeFootprint, "Move building vertex");
     else if (this.gesture === "building-edge" && this.draggedBuilding) this.editor.commitBuildingFootprint(this.draggedBuilding.id, this.draggedBuilding.beforeFootprint, this.options.building.extrude ? "Extrude building edge" : "Move building edge");
+    else if (this.gesture === "facility" && this.draggedFacility) this.editor.moveFacility(this.draggedFacility.id, this.draggedFacility.beforePosition);
     this.renderer?.setNodeSnapTarget();
-    this.draggedNode = undefined; this.draggedRoad = undefined; this.draggedZone = undefined; this.draggedBuilding = undefined; this.renderer?.setBuildingEdge(undefined, this.editor.selection); this.gesture = null; this.pointerId = null; if (this.canvas?.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
-    this.canvas?.classList.remove("is-panning", "is-rotating", "is-moving-road", "is-moving-zone", "is-moving-building");
+    this.draggedNode = undefined; this.draggedRoad = undefined; this.draggedZone = undefined; this.draggedBuilding = undefined; this.draggedFacility = undefined; this.renderer?.setBuildingEdge(undefined, this.editor.selection); this.gesture = null; this.pointerId = null; if (this.canvas?.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
+    this.canvas?.classList.remove("is-panning", "is-rotating", "is-moving-road", "is-moving-zone", "is-moving-building", "is-moving-facility");
   };
   private handleWheel = (event: WheelEvent): void => { if (!this.options.inputEnabled) return; event.preventDefault(); this.zoomBy(Math.exp(-event.deltaY * 0.0014), this.eventPoint(event)); };
   private handleContextMenu = (event: MouseEvent): void => {
@@ -264,7 +280,7 @@ export class MapViewport {
     if (event.key === "Escape") { this.cancelRoad(); this.cancelZone(); this.cancelBuilding(); }
     else if (event.key === "Enter" && this.options.tool === "zones" && this.options.zone.mode === "custom") this.finishZone();
     else if (event.key === "Enter" && this.options.tool === "buildings" && this.options.building.mode === "free") this.finishBuilding();
-    else if (event.key === "Delete" || event.key === "Backspace") { if ((this.options.tool === "select" && this.editor.selection?.kind !== "zone") || (this.options.tool === "zones" && this.options.zone.mode === "edit") || (this.options.tool === "buildings" && this.options.building.mode === "edit")) this.editor.deleteSelected(); }
+    else if (event.key === "Delete" || event.key === "Backspace") { if ((this.options.tool === "select" && this.editor.selection?.kind !== "zone") || (this.options.tool === "public" && this.editor.selection?.kind === "facility") || (this.options.tool === "zones" && this.options.zone.mode === "edit") || (this.options.tool === "buildings" && this.options.building.mode === "edit")) this.editor.deleteSelected(); }
     else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") { event.preventDefault(); this.cancelRoad(); this.cancelZone(); this.cancelBuilding(); if (event.shiftKey) this.editor.redo(); else this.editor.undo(); }
     else if (!event.ctrlKey && !event.metaKey && !event.altKey) {
       const key = event.key.toLowerCase(); const shortcuts = this.options.shortcuts; const center = { x: this.viewportWidth / 2, y: this.viewportHeight / 2 };
@@ -468,6 +484,7 @@ export class MapViewport {
   }
   private pickZone(screen: Point) { if (!this.options.layers.zoning) return undefined; const world = this.camera.screenToMap(screen); return [...this.editor.state.city.zones].reverse().find((zone) => pointInPolygon(world, zone.polygon)); }
   private pickBuilding(screen: Point) { if (!this.options.layers.buildings) return undefined; const world = this.camera.screenToMap(screen); return [...this.editor.state.city.buildings].reverse().find((building) => footprintContainsPoint(building.footprint, world)); }
+  private pickFacility(screen: Point): FacilityPOI | undefined { if (!this.options.layers.facilities) return undefined; return [...this.editor.state.city.facilities].reverse().find((facility) => distance(this.camera.mapToScreen(facility.position), screen) <= 18); }
   private pickBuildingVertex(screen: Point, radius: number) { const selection = this.editor.selection; if (!this.options.layers.buildings || selection?.kind !== "building") return undefined; const building = this.editor.state.city.buildings.find((candidate) => candidate.id === selection.id); if (!building) return undefined; const rings = [building.footprint.outer, ...building.footprint.holes]; const hit = rings.flatMap((ring, ringIndex) => ring.map((point, vertexIndex) => ({ building, ringIndex, vertexIndex, distance: distance(this.camera.mapToScreen(point), screen) }))).filter((candidate) => candidate.distance <= radius).sort((a, b) => a.distance - b.distance)[0]; return hit; }
   private pickBuildingEdge(screen: Point, radius: number) { const selection = this.editor.selection; if (!this.options.layers.buildings || selection?.kind !== "building") return undefined; const building = this.editor.state.city.buildings.find((candidate) => candidate.id === selection.id); if (!building) return undefined; const nearest = nearestFootprintEdge(building.footprint, this.camera.screenToMap(screen)); return nearest && nearest.distance <= radius / this.camera.zoom ? { building, ...nearest } : undefined; }
   private pickZoneVertex(screen: Point, radius: number) { const selection = this.editor.selection; if (!this.options.layers.zoning || selection?.kind !== "zone") return undefined; const zone = this.editor.state.city.zones.find((candidate) => candidate.id === selection.id); if (!zone) return undefined; const hit = zone.polygon.map((point, index) => ({ index, distance: distance(this.camera.mapToScreen(point), screen) })).filter((candidate) => candidate.distance <= radius).sort((a, b) => a.distance - b.distance)[0]; return hit ? { zone, index: hit.index } : undefined; }

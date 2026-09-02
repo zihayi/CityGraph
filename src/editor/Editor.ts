@@ -2,17 +2,18 @@ import { CommandManager } from "../commands/CommandManager";
 import { MoveRoadNodeCommand, RoadSnapshotCommand, UpdateRoadCommand, type RoadSnapshot } from "../commands/RoadCommands";
 import { ZoneSnapshotCommand } from "../commands/ZoneCommands";
 import { BuildingSnapshotCommand } from "../commands/BuildingCommands";
+import { FacilitySnapshotCommand } from "../commands/FacilityCommands";
 import type { Point } from "../geometry/Point";
 import { distance } from "../geometry/RoadGeometry";
 import { isValidBuildingFootprint, mirrorFootprint, rotateFootprint, scaleFootprint, translateFootprint } from "../geometry/BuildingGeometry";
 import { sampleLogicalRoad, sampleRoad } from "../geometry/RoadGeometry";
-import type { Building, City, Road, RoadGeometry, RoadStructure, Zone } from "../model/City";
+import type { Building, City, FacilityPOI, Road, RoadGeometry, RoadStructure, Zone } from "../model/City";
 import { buildRoadCreation, splitRoadEdge, type RoadCreationInput } from "./RoadGraph";
 import { roadIdentityGroupEdges, selectedRoadEdge } from "./RoadIdentity";
 import { EditorState } from "./EditorState";
 
-export type EditorSelection = { kind: "road"; id: string; edgeId?: string } | { kind: "node"; id: string } | { kind: "zone"; id: string } | { kind: "building"; id: string } | null;
-export type EditorChange = "city" | "roads" | "zones" | "buildings" | "selection" | "history";
+export type EditorSelection = { kind: "road"; id: string; edgeId?: string } | { kind: "node"; id: string } | { kind: "zone"; id: string } | { kind: "building"; id: string } | { kind: "facility"; id: string } | null;
+export type EditorChange = "city" | "roads" | "zones" | "buildings" | "facilities" | "selection" | "history";
 
 export class Editor {
   public readonly state: EditorState;
@@ -73,6 +74,7 @@ export class Editor {
     const selection = this.selection; if (!selection) return;
     if (selection.kind === "zone") { const city = this.state.city; const before = structuredClone(city.zones); const after = before.filter((zone) => zone.id !== selection.id); if (after.length === before.length) return; this.commands.execute(new ZoneSnapshotCommand("Delete zone", city, before, after, () => this.emit("zones"))); this.select(null); this.emit("history"); return; }
     if (selection.kind === "building") { const city = this.state.city; const before = structuredClone(city.buildings); const after = before.filter((building) => building.id !== selection.id); if (after.length === before.length) return; this.commands.execute(new BuildingSnapshotCommand("Delete building", city, before, after, () => this.emit("buildings"))); this.select(null); this.emit("history"); return; }
+    if (selection.kind === "facility") { const city = this.state.city; const before = structuredClone(city.facilities); const after = before.filter((facility) => facility.id !== selection.id); if (after.length === before.length) return; this.commands.execute(new FacilitySnapshotCommand("Delete facility", city, before, after, () => this.emit("facilities"))); this.select(null); this.emit("history"); return; }
     const city = this.state.city; const before = this.snapshot(); let roads = structuredClone(city.roads); let roadEdges = structuredClone(city.roadEdges);
     if (selection.kind === "road") {
       const anchor = selectedRoadEdge(city, selection); const removedIds = new Set(anchor ? roadIdentityGroupEdges(city, anchor).map((edge) => edge.id) : roadEdges.filter((edge) => edge.roadId === selection.id).map((edge) => edge.id));
@@ -120,6 +122,21 @@ export class Editor {
 
   public createBuilding(input: Omit<Building, "id">): string | undefined {
     if (!isValidBuildingFootprint(input.footprint)) return undefined; const city = this.state.city; const id = `building-${crypto.randomUUID()}`; const before = structuredClone(city.buildings); const after = [...before, { ...structuredClone(input), id, floors: Math.max(1, Math.round(input.floors)), height: Math.max(1, input.height) }]; this.commands.execute(new BuildingSnapshotCommand("Create building", city, before, after, () => this.emit("buildings"))); this.select({ kind: "building", id }); this.emit("history"); return id;
+  }
+
+  public createFacility(input: Omit<FacilityPOI, "id">): string {
+    const city = this.state.city; const id = `facility-${crypto.randomUUID()}`; const before = structuredClone(city.facilities); const after = [...before, { ...structuredClone(input), id }];
+    this.commands.execute(new FacilitySnapshotCommand("Create facility", city, before, after, () => this.emit("facilities"))); this.select({ kind: "facility", id }); this.emit("history"); return id;
+  }
+
+  public updateFacility(id: string, changes: Partial<Pick<FacilityPOI, "name">>): void {
+    const city = this.state.city; const current = city.facilities.find((facility) => facility.id === id); if (!current || changes.name === undefined || changes.name === current.name) return; const before = structuredClone(city.facilities); const after = before.map((facility) => facility.id === id ? { ...facility, name: changes.name! } : facility);
+    this.commands.execute(new FacilitySnapshotCommand("Rename facility", city, before, after, () => this.emit("facilities"))); this.emit("history"); this.emit("selection");
+  }
+
+  public moveFacility(id: string, beforePosition: Point): void {
+    const city = this.state.city; const current = city.facilities.find((facility) => facility.id === id); if (!current || distance(current.position, beforePosition) < 1e-5) return; const after = structuredClone(city.facilities); const before = structuredClone(after); const previous = before.find((facility) => facility.id === id); if (!previous) return; previous.position = { ...beforePosition };
+    this.commands.execute(new FacilitySnapshotCommand("Move facility", city, before, after, () => this.emit("facilities"))); this.select({ kind: "facility", id }); this.emit("history");
   }
 
   public updateBuilding(id: string, changes: Partial<Omit<Building, "id" | "footprint">>): void {
@@ -200,6 +217,7 @@ export class Editor {
     if (this.selection?.kind === "node" && !this.state.city.roadNodes.some((node) => node.id === this.selection?.id)) this.selection = null;
     if (this.selection?.kind === "zone" && !this.state.city.zones.some((zone) => zone.id === this.selection?.id)) this.selection = null;
     if (this.selection?.kind === "building" && !this.state.city.buildings.some((building) => building.id === this.selection?.id)) this.selection = null;
+    if (this.selection?.kind === "facility" && !this.state.city.facilities.some((facility) => facility.id === this.selection?.id)) this.selection = null;
   }
   private commitZonePolygon(id: string, beforePolygon: Point[], label: string): void {
     const city = this.state.city; const current = city.zones.find((zone) => zone.id === id); if (!current || current.polygon.length !== beforePolygon.length || current.polygon.every((point, index) => distance(point, beforePolygon[index]!) < 1e-5)) return;
