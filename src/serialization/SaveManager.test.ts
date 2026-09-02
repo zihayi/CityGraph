@@ -55,14 +55,14 @@ describe("SaveManager", () => {
     city.roads.push({ id: "main-2", name: "Main", category: "normal", subtype: "small", width: 8, segmentIds: ["edge-2"] });
     city.roadEdges.push({ id: "edge", roadId: "main", name: "Main", startNodeId: "a", endNodeId: "b", structure: "ground", level: 0, geometry: { type: "line" } });
     city.roadEdges.push({ id: "edge-2", roadId: "main-2", name: "Main", startNodeId: "c", endNodeId: "d", structure: "ground", level: 0, geometry: { type: "line" } });
-    city.buildings.push({ id: "building", x: 20, y: 30, width: 10, height: 12, rotation: 0, type: "residential" });
+    city.buildings.push({ id: "building", footprint: { outer: [{ x: 20, y: 30 }, { x: 40, y: 30 }, { x: 40, y: 50 }, { x: 20, y: 50 }], holes: [[{ x: 26, y: 36 }, { x: 26, y: 44 }, { x: 34, y: 44 }, { x: 34, y: 36 }]] }, type: "residential", subtype: "Apartment", floors: 4, height: 14, style: "chinese" });
     city.roads[0]!.description = "Old market route"; city.buildings[0]!.description = "A beloved corner shop";
     city.labels.push({ id: "label", x: 20, y: 30, text: "Center", type: "custom" });
     city.zones.push({ id: "zone", name: "Campus", description: "Founded beside the river", type: "education", polygon: [{ x: 0, y: 0 }, { x: 80, y: 0 }, { x: 40, y: 60 }], source: "custom", opacity: 0.45, color: "#9fbfd0", icon: "graduation-cap", iconColor: "#fff4d0", iconOpacity: 0.65 });
     const camera = { x: 10, y: 20, zoom: 0.5, rotation: 0.83 };
     await new SaveManager().saveAs("Lake City", city, camera);
     const folder = saves.directories.get("Lake City");
-    expect([...folder!.files.keys()].sort()).toEqual(["map.json", "metadata.json", "roads.json", "zones.json"]);
+    expect([...folder!.files.keys()].sort()).toEqual(["buildings.json", "map.json", "metadata.json", "roads.json", "zones.json"]);
     expect(folder!.directories.has("assets")).toBe(true);
 
     const loaded = await new SaveManager().load();
@@ -71,7 +71,7 @@ describe("SaveManager", () => {
     expect(loaded.city.roads[0]?.segmentIds).toEqual(["edge"]);
     expect(loaded.city.roadEdges[0]?.roadId).toBe("main");
     expect(roadIdentityGroupEdges(loaded.city, loaded.city.roadEdges[0]!)).toHaveLength(2);
-    expect(loaded.city.buildings[0]).toMatchObject({ id: "building", description: "A beloved corner shop" }); expect(loaded.city.roads[0]?.description).toBe("Old market route"); expect(loaded.city.labels[0]?.text).toBe("Center");
+    expect(loaded.city.buildings[0]).toEqual(city.buildings[0]); expect(JSON.parse(folder!.files.get("map.json")!.content).buildings).toBeUndefined(); expect(loaded.city.roads[0]?.description).toBe("Old market route"); expect(loaded.city.labels[0]?.text).toBe("Center");
     expect(loaded.city.zones[0]).toEqual(city.zones[0]);
     expect(loaded.camera.rotation).toBe(camera.rotation);
   });
@@ -105,6 +105,10 @@ describe("SaveManager", () => {
     installSaveFolder(folder);
     const loaded = await new SaveManager().load(); expect(loaded.city.roadEdges[0]?.name).toBe("Legacy Avenue");
   });
+
+  it("migrates rotated rectangle buildings from version 5", async () => { const folder = new MemoryDirectory(); folder.files.set("metadata.json", Object.assign(new MemoryFile(), { content: JSON.stringify({ formatVersion: 5, saveName: "Legacy Building", mapName: "Legacy Building", updatedAt: "2026-01-01T00:00:00Z" }) })); folder.files.set("map.json", Object.assign(new MemoryFile(), { content: JSON.stringify({ mapSize: "small", worldBounds: { x: 0, y: 0, width: 100, height: 100 }, terrain: "flat", water: [], camera: { x: 0, y: 0, zoom: 1, rotation: 0 }, buildings: [{ id: "old", x: 10, y: 20, width: 30, height: 10, rotation: Math.PI / 2, type: "office", name: "Tower" }] }) })); folder.files.set("roads.json", Object.assign(new MemoryFile(), { content: JSON.stringify({ roadNodes: [], roads: [], roadEdges: [] }) })); installSaveFolder(folder); const loaded = await new SaveManager().load(); expect(loaded.city.buildings[0]).toMatchObject({ id: "old", type: "office", floors: 1, height: 3, style: "modern" }); expect(loaded.city.buildings[0]!.footprint.outer[1]!.x).toBeCloseTo(10); expect(loaded.city.buildings[0]!.footprint.outer[1]!.y).toBeCloseTo(50); });
+
+  it("uses a valid independent building document while an older metadata commit marker remains", async () => { const folder = new MemoryDirectory(); folder.files.set("metadata.json", Object.assign(new MemoryFile(), { content: JSON.stringify({ formatVersion: 5, saveName: "Interrupted", mapName: "Interrupted", updatedAt: "2026-01-01T00:00:00Z" }) })); folder.files.set("map.json", Object.assign(new MemoryFile(), { content: JSON.stringify({ mapSize: "small", worldBounds: { x: 0, y: 0, width: 100, height: 100 }, terrain: "flat", water: [], camera: { x: 0, y: 0, zoom: 1, rotation: 0 } }) })); folder.files.set("roads.json", Object.assign(new MemoryFile(), { content: JSON.stringify({ roadNodes: [], roads: [], roadEdges: [] }) })); folder.files.set("buildings.json", Object.assign(new MemoryFile(), { content: JSON.stringify({ buildings: [{ id: "safe", footprint: { outer: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }], holes: [] }, type: "custom", subtype: "", floors: 1, height: 3, style: "custom" }] }) })); installSaveFolder(folder); const loaded = await new SaveManager().load(); expect(loaded.city.buildings.map((building) => building.id)).toEqual(["safe"]); });
 
   it("keeps automatic saves separate and prunes them by slot count", async () => {
     vi.useFakeTimers(); const saves = new MemoryDirectory(); installStorage(saves); const manager = new SaveManager(); const city = createNewCity({ name: "Rolling City", size: "small", terrain: "flat", lakeCount: 1 }); const camera = { x: 0, y: 0, zoom: 1, rotation: 0 };

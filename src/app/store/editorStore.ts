@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { getInitialLocale, type Locale } from "../../i18n";
-import type { RoadStructure, RoadSubtype, ZoneType } from "../../model/City";
+import type { BuildingStyle, BuildingType, RoadStructure, RoadSubtype, ZoneType } from "../../model/City";
+import type { BuildingPreset } from "../../geometry/BuildingGeometry";
 import { defaultZoneColors, defaultZoneIconColors, defaultZoneIcons } from "../../model/ZoneStyle";
 import { gridSnapLayers } from "./gridSnap";
 
@@ -30,6 +31,7 @@ export type LayerId =
 
 export type LayerVisibility = Record<LayerId, boolean>;
 export type RoadShape = "draw" | "parallel" | "circle" | "polygon";
+export type BuildingMode = "preset" | "free" | "edit";
 export type ShortcutAction = "panUp" | "panLeft" | "panDown" | "panRight" | "rotateLeft" | "rotateRight";
 export type KeyboardShortcuts = Record<ShortcutAction, string>;
 
@@ -66,6 +68,18 @@ interface EditorUiState {
   zoneIconColor: string;
   zoneIconOpacity: number;
   zoningOpacity: number;
+  buildingMode: BuildingMode;
+  buildingPreset: BuildingPreset;
+  buildingType: BuildingType;
+  buildingSubtype: string;
+  buildingStyle: BuildingStyle;
+  buildingFloors: number;
+  buildingHeight: number;
+  buildingWidth: number;
+  buildingDepth: number;
+  buildingSnapToRoad: boolean;
+  buildingSetback: number;
+  buildingExtrude: boolean;
   shortcuts: KeyboardShortcuts;
   uiOpacity: number;
   musicEnabled: boolean;
@@ -98,6 +112,18 @@ interface EditorUiState {
   setZoneIconColor: (color: string) => void;
   setZoneIconOpacity: (opacity: number) => void;
   setZoningOpacity: (opacity: number) => void;
+  setBuildingMode: (mode: BuildingMode) => void;
+  setBuildingPreset: (preset: BuildingPreset) => void;
+  setBuildingType: (type: BuildingType) => void;
+  setBuildingSubtype: (subtype: string) => void;
+  setBuildingStyle: (style: BuildingStyle) => void;
+  setBuildingFloors: (floors: number) => void;
+  setBuildingHeight: (height: number) => void;
+  setBuildingWidth: (width: number) => void;
+  setBuildingDepth: (depth: number) => void;
+  setBuildingSnapToRoad: (enabled: boolean) => void;
+  setBuildingSetback: (setback: number) => void;
+  setBuildingExtrude: (enabled: boolean) => void;
   setShortcut: (action: ShortcutAction, key: string) => void;
   resetShortcuts: () => void;
   setUiOpacity: (opacity: number) => void;
@@ -147,6 +173,18 @@ export const useEditorStore = create<EditorUiState>((set) => ({
   zoneIconColor: defaultZoneIconColors.residential,
   zoneIconOpacity: 1,
   zoningOpacity: 0.72,
+  buildingMode: "preset",
+  buildingPreset: "rectangle",
+  buildingType: "residential",
+  buildingSubtype: "",
+  buildingStyle: "modern",
+  buildingFloors: 3,
+  buildingHeight: 10,
+  buildingWidth: 50,
+  buildingDepth: 32,
+  buildingSnapToRoad: true,
+  buildingSetback: 6,
+  buildingExtrude: false,
   shortcuts: savedShortcuts,
   uiOpacity: Math.max(0.35, Math.min(1, Number(localStorage.getItem("citygraph:ui-opacity")) || 0.82)),
   musicEnabled: localStorage.getItem("citygraph:music-enabled") !== "false",
@@ -156,7 +194,7 @@ export const useEditorStore = create<EditorUiState>((set) => ({
   autoSaveSlots: Math.max(1, Number(localStorage.getItem("citygraph:auto-save-slots")) || 5),
   autoSaveRetentionDays: Math.max(1, Number(localStorage.getItem("citygraph:auto-save-retention")) || 30),
   toolbarCollapsed: localStorage.getItem("citygraph:toolbar-collapsed") === "true",
-  setCurrentTool: (currentTool) => set((state) => ({ currentTool, layers: currentTool === "zones" ? { ...state.layers, zoning: true } : state.layers })),
+  setCurrentTool: (currentTool) => set((state) => ({ currentTool, layers: currentTool === "zones" ? { ...state.layers, zoning: true } : currentTool === "buildings" ? { ...state.layers, buildings: true } : state.layers })),
   setZoomPercent: (zoomPercent) => set({ zoomPercent: Math.round(zoomPercent) }),
   toggleLayer: (layer) =>
     set((state) => ({
@@ -182,6 +220,18 @@ export const useEditorStore = create<EditorUiState>((set) => ({
   setZoneIconColor: (zoneIconColor) => set({ zoneIconColor }),
   setZoneIconOpacity: (zoneIconOpacity) => set({ zoneIconOpacity: Math.max(0, Math.min(1, zoneIconOpacity)) }),
   setZoningOpacity: (zoningOpacity) => set({ zoningOpacity: Math.max(0.05, Math.min(1, zoningOpacity)) }),
+  setBuildingMode: (buildingMode) => set({ buildingMode }),
+  setBuildingPreset: (buildingPreset) => set({ buildingPreset }),
+  setBuildingType: (buildingType) => set({ buildingType }),
+  setBuildingSubtype: (buildingSubtype) => set({ buildingSubtype }),
+  setBuildingStyle: (buildingStyle) => set({ buildingStyle }),
+  setBuildingFloors: (buildingFloors) => set({ buildingFloors: Math.max(1, Math.min(200, Math.round(buildingFloors))) }),
+  setBuildingHeight: (buildingHeight) => set({ buildingHeight: Math.max(1, Math.min(1000, Math.round(buildingHeight * 2) / 2)) }),
+  setBuildingWidth: (buildingWidth) => set({ buildingWidth: Math.max(4, Math.min(500, Math.round(buildingWidth * 2) / 2)) }),
+  setBuildingDepth: (buildingDepth) => set({ buildingDepth: Math.max(4, Math.min(500, Math.round(buildingDepth * 2) / 2)) }),
+  setBuildingSnapToRoad: (buildingSnapToRoad) => set({ buildingSnapToRoad }),
+  setBuildingSetback: (buildingSetback) => set({ buildingSetback: Math.max(0, Math.min(200, Math.round(buildingSetback * 2) / 2)) }),
+  setBuildingExtrude: (buildingExtrude) => set({ buildingExtrude }),
   setShortcut: (action, key) => set((state) => {
     const normalized = key.toLowerCase(); const shortcuts = { ...state.shortcuts }; const duplicate = (Object.keys(shortcuts) as ShortcutAction[]).find((candidate) => candidate !== action && shortcuts[candidate] === normalized);
     if (duplicate) shortcuts[duplicate] = shortcuts[action]; shortcuts[action] = normalized;

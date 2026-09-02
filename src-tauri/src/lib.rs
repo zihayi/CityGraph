@@ -12,6 +12,7 @@ struct SaveFiles {
     map: String,
     roads: String,
     zones: String,
+    buildings: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -30,13 +31,16 @@ fn save_city_files(
     map: String,
     roads: String,
     zones: String,
+    buildings: String,
 ) -> Result<String, String> {
     let folder = PathBuf::from(parent_path).join(folder_name);
     fs::create_dir_all(folder.join("assets")).map_err(|error| error.to_string())?;
-    fs::write(folder.join("metadata.json"), metadata).map_err(|error| error.to_string())?;
+    fs::write(folder.join("buildings.json"), buildings).map_err(|error| error.to_string())?;
     fs::write(folder.join("map.json"), map).map_err(|error| error.to_string())?;
     fs::write(folder.join("roads.json"), roads).map_err(|error| error.to_string())?;
     fs::write(folder.join("zones.json"), zones).map_err(|error| error.to_string())?;
+    // Metadata is the save's commit marker, so incomplete writes keep their previous version visible.
+    fs::write(folder.join("metadata.json"), metadata).map_err(|error| error.to_string())?;
     folder
         .into_os_string()
         .into_string()
@@ -53,6 +57,7 @@ fn load_city_files(folder_path: String) -> Result<SaveFiles, String> {
         roads: fs::read_to_string(folder.join("roads.json")).map_err(|error| error.to_string())?,
         zones: fs::read_to_string(folder.join("zones.json"))
             .unwrap_or_else(|_| "{\"zones\":[]}".to_string()),
+        buildings: fs::read_to_string(folder.join("buildings.json")).ok(),
     })
 }
 

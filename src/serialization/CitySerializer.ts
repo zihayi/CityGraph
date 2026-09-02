@@ -1,7 +1,7 @@
 import type { City } from "../model/City";
 
 export interface CityDocument {
-  version: 2;
+  version: 3;
   city: Pick<City, "id" | "name" | "bounds">;
   roadNodes: City["roadNodes"];
   roads: City["roads"];
@@ -20,7 +20,7 @@ export interface CityDocument {
 export class CitySerializer {
   public static toDocument(city: City): CityDocument {
     return {
-      version: 2,
+      version: 3,
       city: { id: city.id, name: city.name, bounds: city.bounds },
       roadNodes: city.roadNodes,
       roads: city.roads,

@@ -643,7 +643,19 @@ button {
 .road-context-menu button:disabled { color: #61757c; cursor: not-allowed; }
 .citygraph-canvas.is-moving-road { cursor: grabbing; }
 .citygraph-canvas.is-moving-zone { cursor: move; }
+.citygraph-canvas.is-moving-building { cursor: move; }
 .zone-palette { width: 214px; }
+.building-palette { width: 218px; }
+.building-mode-toggle { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.building-preset-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+.building-preset-grid button { display: flex; min-width: 0; height: 38px; align-items: center; gap: 7px; border: 1px solid rgb(82 123 137 / 40%); border-radius: 7px; padding: 0 8px; background: rgb(11 40 52 / 60%); color: #b8c8cd; cursor: pointer; }
+.building-preset-grid button.is-active { border-color: #39d1d0; background: rgb(15 93 101 / 55%); color: #48dedc; }
+.building-preset-grid b { width: 20px; color: #eef8f8; font-size: 12px; text-align: center; }
+.building-preset-grid span { overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.building-action-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
+.building-action-grid button { display: flex; min-width: 0; min-height: 34px; align-items: center; justify-content: center; gap: 5px; border: 1px solid rgb(82 123 137 / 40%); border-radius: 7px; padding: 5px; background: rgb(11 40 52 / 60%); color: #cbd8db; cursor: pointer; font-size: 9px; }
+.building-action-grid button:hover:not(:disabled) { border-color: #39d1d0; color: #48dedc; }
+.building-action-grid button:disabled { opacity: .35; cursor: default; }
 .zone-section-label { color: #839aa2; font-size: 9px; letter-spacing: .7px; text-transform: uppercase; }
 .zone-type-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
 .zone-type-grid button { display: flex; min-width: 0; height: 35px; align-items: center; gap: 7px; padding: 0 7px; border: 1px solid rgb(82 123 137 / 40%); border-radius: 7px; background: rgb(11 40 52 / 60%); color: #b8c8cd; cursor: pointer; }
@@ -762,6 +774,7 @@ button {
   .map-controls { right: 9px; bottom: 70px; }
   .road-palette { top: 72px; width: 156px; }
   .zone-palette { width: min(210px, calc(100vw - 166px)); }
+  .building-palette { width: min(218px, calc(100vw - 166px)); }
   .right-floating-ui { top: 72px; right: 8px; bottom: 8px; width: min(280px, calc(100vw - 86px)); }
   .settings-action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-number-grid { grid-template-columns: 1fr; }

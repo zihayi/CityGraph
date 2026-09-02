@@ -1,4 +1,5 @@
 import type { Point } from "../geometry/Point";
+import { createBuildingPreset } from "../geometry/BuildingGeometry";
 import type {
   Block,
   Building,
@@ -143,6 +144,7 @@ function seededNoise(seed: number): number {
 
 function createBuildings(): Building[] {
   const buildings: Building[] = [];
+  const rectangle = (buildingId: string, x: number, y: number, width: number, depth: number, type: BuildingType, name?: string): Building => ({ id: buildingId, footprint: createBuildingPreset("rectangle", { x: x + width / 2, y: y + depth / 2 }, width, depth), type, subtype: "", floors: type === "residential" ? 3 : 2, height: type === "residential" ? 10 : 8, style: "modern", name });
   const ranges = [
     { from: 65, to: 650 },
     { from: 900, to: 1540 },
@@ -160,24 +162,17 @@ function createBuildings(): Building[] {
 
         const types: BuildingType[] = ["residential", "residential", "commercial", "office"];
         const type = types[id % types.length] ?? "residential";
-        buildings.push({
-          id: `building-${id}`,
-          x: x + noise * 9,
-          y: y + seededNoise(id + 10) * 8,
-          width: 31 + seededNoise(id + 20) * 18,
-          height: 20 + seededNoise(id + 30) * 16,
-          rotation: 0,
-          type,
-        });
+        const width = 31 + seededNoise(id + 20) * 18; const depth = 20 + seededNoise(id + 30) * 16;
+        buildings.push(rectangle(`building-${id}`, x + noise * 9, y + seededNoise(id + 10) * 8, width, depth, type));
         id += 1;
       }
     }
   }
 
   buildings.push(
-    { id: "city-hall-building", x: 825, y: 405, width: 74, height: 48, rotation: 0, type: "public", name: "City Hall" },
-    { id: "hospital-building", x: 650, y: 210, width: 62, height: 42, rotation: 0, type: "public", name: "Riverside Hospital" },
-    { id: "school-building", x: 1230, y: 175, width: 68, height: 46, rotation: 0, type: "public", name: "Northfield School" },
+    rectangle("city-hall-building", 825, 405, 74, 48, "government", "City Hall"),
+    rectangle("hospital-building", 650, 210, 62, 42, "medical", "Riverside Hospital"),
+    rectangle("school-building", 1230, 175, 68, 46, "education", "Northfield School"),
   );
 
   return buildings;

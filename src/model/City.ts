@@ -12,9 +12,14 @@ export type RoadGeometry =
 export type BuildingType =
   | "residential"
   | "commercial"
+  | "education"
+  | "medical"
+  | "government"
   | "office"
   | "industrial"
-  | "public";
+  | "public"
+  | "custom";
+export type BuildingStyle = "modern" | "chinese" | "classical" | "industrial" | "custom";
 export type ZoneType =
   | "residential"
   | "commercial"
@@ -55,12 +60,19 @@ export interface RoadEdge {
   geometry: RoadGeometry;
 }
 
-export interface Building extends Point {
+export interface BuildingFootprint {
+  outer: Point[];
+  holes: Point[][];
+}
+
+export interface Building {
   id: string;
-  width: number;
-  height: number;
-  rotation: number;
+  footprint: BuildingFootprint;
   type: BuildingType;
+  subtype: string;
+  floors: number;
+  height: number;
+  style: BuildingStyle;
   name?: string;
   description?: string;
 }
