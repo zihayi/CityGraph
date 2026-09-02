@@ -142,7 +142,7 @@ const enUS = {
   "properties.renameSegment": "Selected Segment Only",
   "facility.type": "Type",
   "facility.position": "Position",
-  "facility.dragHint": "Drag a facility inside a building. Placed facilities can be moved within buildings.",
+  "facility.placeHint": "Select a facility, then click inside a building to place it. Press Esc to cancel.",
   "facility.invalid.building": "Facilities must be placed inside a building.",
   "map.panHint": "Left drag to pan",
   "map.zoomHint": "Wheel to zoom",

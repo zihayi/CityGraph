@@ -144,7 +144,7 @@ const zhCN: Record<keyof typeof enUS, string> = {
   "properties.renameSegment": "仅修改当前路段",
   "facility.type": "类型",
   "facility.position": "位置",
-  "facility.dragHint": "将设施拖到建筑内部；选中已放置的设施后可在建筑内调整位置。",
+  "facility.placeHint": "先选择设施，再点击建筑内部放置；按 Esc 取消。",
   "facility.invalid.building": "设施必须放置在建筑内部。",
   "map.panHint": "左键拖动平移",
   "map.zoomHint": "滚轮缩放",

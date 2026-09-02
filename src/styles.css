@@ -736,11 +736,12 @@ button {
 .building-palette { width: 218px; }
 .facility-palette { width: 220px; }
 .facility-grid { display: grid; grid-template-columns: 1fr; gap: 5px; }
-.facility-grid button { display: flex; min-width: 0; height: 42px; align-items: center; gap: 10px; border: 1px solid rgb(82 123 137 / 40%); border-radius: 8px; padding: 0 9px; background: rgb(11 40 52 / 60%); color: #d3dfe2; cursor: grab; }
+.facility-grid button { display: flex; min-width: 0; height: 42px; align-items: center; gap: 10px; border: 1px solid rgb(82 123 137 / 40%); border-radius: 8px; padding: 0 9px; background: rgb(11 40 52 / 60%); color: #d3dfe2; cursor: pointer; }
 .facility-grid button:hover { border-color: #39d1d0; background: rgb(15 93 101 / 55%); color: #f3ffff; }
-.facility-grid button:active { cursor: grabbing; }
+.facility-grid button.is-active { border-color: #5ce2dd; background: rgb(17 112 117 / 72%); box-shadow: inset 3px 0 #79f3eb, 0 0 16px rgb(50 211 205 / 15%); color: #fff; }
 .facility-grid img { width: 25px; height: 25px; flex: 0 0 auto; object-fit: contain; filter: invert(92%) sepia(12%) saturate(315%) hue-rotate(130deg); }
 .facility-grid span { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.map-stage.is-placing-facility .citygraph-canvas { cursor: crosshair; }
 .facility-overlay { position: absolute; z-index: 13; inset: 0; overflow: hidden; pointer-events: none; }
 .facility-marker { position: absolute; top: 0; left: 0; display: flex; align-items: center; gap: 5px; transform-origin: 0 0; }
 .facility-marker-icon { display: grid; width: 25px; height: 25px; place-items: center; transform: translate(-50%, -50%); border: 2px solid rgb(255 255 255 / 96%); border-radius: 50%; background: #ffffff; box-shadow: 0 2px 7px rgb(13 39 47 / 32%); }
