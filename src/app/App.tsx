@@ -12,6 +12,7 @@ import { SaveDialog } from "../ui/Dialogs/SaveDialog";
 import { SettingsDialog } from "../ui/Dialogs/SettingsDialog";
 import { RightPanel } from "../ui/RightPanel/RightPanel";
 import { TopBar } from "../ui/TopBar/TopBar";
+import { LaunchScreen } from "../ui/LaunchScreen/LaunchScreen";
 import { useEditorStore } from "./store/editorStore";
 import { useTranslation } from "./useTranslation";
 import { soundManager } from "../services/SoundManager";
@@ -65,5 +66,6 @@ export function App() {
     <TopBar cityName={city.name} canUndo={editor.commands.canUndo} canRedo={editor.commands.canRedo} t={t} onUndo={() => editor.undo()} onRedo={() => editor.redo()} onSave={() => void save()} onSettings={() => setDialog("settings")}/>
     <div className="workspace"><LeftToolbar currentTool={store.currentTool} collapsed={store.toolbarCollapsed} onToolChange={store.setCurrentTool} onToggleCollapsed={store.toggleToolbarCollapsed} t={t}/><MapWorkspace editor={editor} layers={store.layers} tool={store.currentTool} road={road} zone={zone} building={building} shortcuts={store.shortcuts} inputEnabled={dialog === null} mapRef={mapRef} onZoomChange={store.setZoomPercent} validation={validation} onValidation={setValidation} t={t}/><RightPanel editor={editor} tool={store.currentTool} visibility={store.layers} zoningOpacity={store.zoningOpacity} onZoningOpacity={store.setZoningOpacity} onToggleLayer={store.toggleLayer} t={t}/></div>
     {dialog === "new" && <NewMapDialog t={t} onCreate={create} onCancel={() => setDialog(null)}/>} {dialog === "saveAs" && <SaveDialog defaultName={city.name} t={t} onSave={(name) => void saveAs(name)} onCancel={() => setDialog(null)}/>} {dialog === "settings" && <SettingsDialog opacity={store.uiOpacity} locale={store.locale} shortcuts={store.shortcuts} musicEnabled={store.musicEnabled} musicVolume={store.musicVolume} autoSaveEnabled={store.autoSaveEnabled} autoSaveIntervalMinutes={store.autoSaveIntervalMinutes} autoSaveSlots={store.autoSaveSlots} autoSaveRetentionDays={store.autoSaveRetentionDays} fullscreen={fullscreen} t={t} onOpacity={store.setUiOpacity} onLocale={store.setLocale} onShortcut={store.setShortcut} onResetShortcuts={store.resetShortcuts} onMusicEnabled={store.setMusicEnabled} onMusicVolume={store.setMusicVolume} onAutoSaveEnabled={store.setAutoSaveEnabled} onAutoSaveIntervalMinutes={store.setAutoSaveIntervalMinutes} onAutoSaveSlots={store.setAutoSaveSlots} onAutoSaveRetentionDays={store.setAutoSaveRetentionDays} onFullscreen={(enabled) => void changeFullscreen(enabled)} onNew={() => setDialog("new")} onSave={() => { setDialog(null); void save(); }} onSaveAs={() => setDialog("saveAs")} onLoad={() => { setDialog(null); void load(); }} onClose={() => setDialog(null)}/>} {status && <div className="status-toast">{status}</div>}
+    <LaunchScreen/>
   </div>;
 }
