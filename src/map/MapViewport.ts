@@ -11,7 +11,7 @@ import { pointInPolygon } from "../geometry/Polygon";
 import { nearestPointOnSegment } from "../geometry/Segment";
 import { nearestZoneSegment } from "../geometry/ZoneGeometry";
 import type { Point } from "../geometry/Point";
-import type { Building, BuildingStyle, BuildingType, FacilityPOI, RoadCategory, RoadGeometry, RoadStructure, RoadSubtype, ZoneType } from "../model/City";
+import { defaultFacilityColor, type Building, type BuildingStyle, type BuildingType, type FacilityPOI, type RoadCategory, type RoadGeometry, type RoadStructure, type RoadSubtype, type ZoneType } from "../model/City";
 import { isFacilityPlacementValid } from "../model/FacilityPlacement";
 import { createBuildingPreset, dragFootprintEdge, extrudeFootprintEdge, footprintContainsPoint, footprintEdgeOutwardNormal, isValidBuildingFootprint, nearestFootprintEdge, translateFootprint, type BuildingPreset, type FootprintEdge } from "../geometry/BuildingGeometry";
 import { MapCamera } from "./MapCamera";
@@ -117,7 +117,7 @@ export class MapViewport {
     const rect = this.canvas.getBoundingClientRect(); const position = this.camera.screenToMap({ x: clientX - rect.left, y: clientY - rect.top });
     if (!isFacilityPlacementValid(this.editor.state.city.buildings, position)) { this.options.onValidation?.("facility.invalid.building"); return undefined; }
     this.options.onValidation?.();
-    return this.editor.createFacility({ type, name, icon, position });
+    return this.editor.createFacility({ type, name, icon, color: defaultFacilityColor, position });
   }
   public northUp(): void {
     cancelAnimationFrame(this.northAnimation); const start = this.camera.rotation; const started = performance.now();

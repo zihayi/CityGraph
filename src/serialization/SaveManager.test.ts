@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createNewCity } from "../model/mapGenerator";
 import { SaveManager } from "./SaveManager";
 import { roadIdentityGroupEdges } from "../editor/RoadIdentity";
+import { defaultFacilityColor } from "../model/City";
 
 class MemoryFile {
   public content = "";
@@ -58,7 +59,7 @@ describe("SaveManager", () => {
     city.buildings.push({ id: "building", footprint: { outer: [{ x: 20, y: 30 }, { x: 40, y: 30 }, { x: 40, y: 50 }, { x: 20, y: 50 }], holes: [[{ x: 26, y: 36 }, { x: 26, y: 44 }, { x: 34, y: 44 }, { x: 34, y: 36 }]] }, type: "residential", subtype: "Apartment", floors: 4, height: 14, style: "chinese" });
     city.roads[0]!.description = "Old market route"; city.buildings[0]!.description = "A beloved corner shop";
     city.labels.push({ id: "label", x: 20, y: 30, text: "Center", type: "custom" });
-    city.facilities.push({ id: "facility", type: "coffee-shop", name: "Manner Coffee", position: { x: 42, y: 38 }, icon: "coffee-shop.svg" });
+    city.facilities.push({ id: "facility", type: "coffee-shop", name: "Manner Coffee", position: { x: 42, y: 38 }, icon: "coffee-shop.svg", color: "#b84a62" });
     city.zones.push({ id: "zone", name: "Campus", description: "Founded beside the river", type: "education", polygon: [{ x: 0, y: 0 }, { x: 80, y: 0 }, { x: 40, y: 60 }], source: "custom", opacity: 0.45, color: "#9fbfd0", icon: "graduation-cap", iconColor: "#fff4d0", iconOpacity: 0.65 });
     const camera = { x: 10, y: 20, zoom: 0.5, rotation: 0.83 };
     await new SaveManager().saveAs("Lake City", city, camera);
@@ -91,6 +92,12 @@ describe("SaveManager", () => {
     const saves = new MemoryDirectory(); installStorage(saves); const city = createNewCity({ name: "Invalid Facilities", size: "small", terrain: "flat", lakeCount: 1 }); await new SaveManager().saveAs(city.name, city, { x: 0, y: 0, zoom: 1, rotation: 0 });
     saves.directories.get(city.name)!.files.get("facilities.json")!.content = "{}";
     await expect(new SaveManager().load()).rejects.toMatchObject({ code: "invalid" });
+  });
+
+  it("adds the default color when loading facilities saved before marker colors", async () => {
+    const saves = new MemoryDirectory(); installStorage(saves); const city = createNewCity({ name: "Legacy Facility", size: "small", terrain: "flat", lakeCount: 1 }); city.facilities.push({ id: "facility", type: "store", name: "Store", position: { x: 12, y: 18 }, icon: "store.svg", color: defaultFacilityColor }); await new SaveManager().saveAs(city.name, city, { x: 0, y: 0, zoom: 1, rotation: 0 });
+    const file = saves.directories.get(city.name)!.files.get("facilities.json")!; const document = JSON.parse(file.content) as { facilities: Array<Record<string, unknown>> }; delete document.facilities[0]!.color; file.content = JSON.stringify(document);
+    const loaded = await new SaveManager().load(); expect(loaded.city.facilities[0]?.color).toBe(defaultFacilityColor);
   });
 
   it("migrates version 2 edge-based road saves", async () => {

@@ -129,9 +129,9 @@ export class Editor {
     this.commands.execute(new FacilitySnapshotCommand("Create facility", city, before, after, () => this.emit("facilities"))); this.select({ kind: "facility", id }); this.emit("history"); return id;
   }
 
-  public updateFacility(id: string, changes: Partial<Pick<FacilityPOI, "name">>): void {
-    const city = this.state.city; const current = city.facilities.find((facility) => facility.id === id); if (!current || changes.name === undefined || changes.name === current.name) return; const before = structuredClone(city.facilities); const after = before.map((facility) => facility.id === id ? { ...facility, name: changes.name! } : facility);
-    this.commands.execute(new FacilitySnapshotCommand("Rename facility", city, before, after, () => this.emit("facilities"))); this.emit("history"); this.emit("selection");
+  public updateFacility(id: string, changes: Partial<Pick<FacilityPOI, "name" | "color">>): void {
+    const city = this.state.city; const current = city.facilities.find((facility) => facility.id === id); if (!current) return; const updated = { ...current, ...changes }; if (updated.name === current.name && updated.color === current.color) return; const before = structuredClone(city.facilities); const after = before.map((facility) => facility.id === id ? { ...facility, ...changes } : facility);
+    this.commands.execute(new FacilitySnapshotCommand(changes.color !== undefined ? "Change facility color" : "Rename facility", city, before, after, () => this.emit("facilities"))); this.emit("history"); this.emit("selection");
   }
 
   public moveFacility(id: string, beforePosition: Point): void {

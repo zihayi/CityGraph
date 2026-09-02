@@ -143,6 +143,7 @@ const zhCN: Record<keyof typeof enUS, string> = {
   "properties.renameGroup": "修改整条同名道路",
   "properties.renameSegment": "仅修改当前路段",
   "facility.type": "类型",
+  "facility.color": "标记颜色",
   "facility.position": "位置",
   "facility.placeHint": "先选择设施，再点击建筑内部放置；按 Esc 取消。",
   "facility.invalid.building": "设施必须放置在建筑内部。",

@@ -141,6 +141,7 @@ const enUS = {
   "properties.renameGroup": "Entire Named Road",
   "properties.renameSegment": "Selected Segment Only",
   "facility.type": "Type",
+  "facility.color": "Marker Color",
   "facility.position": "Position",
   "facility.placeHint": "Select a facility, then click inside a building to place it. Press Esc to cancel.",
   "facility.invalid.building": "Facilities must be placed inside a building.",

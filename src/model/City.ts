@@ -124,7 +124,10 @@ export interface FacilityPOI {
   name: string;
   position: Point;
   icon: string;
+  color: string;
 }
+
+export const defaultFacilityColor = "#2d9f9b";
 
 export interface TransitStation extends Point {
   id: string;

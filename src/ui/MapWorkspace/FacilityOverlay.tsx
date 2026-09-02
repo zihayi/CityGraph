@@ -11,6 +11,6 @@ function toScreen(point: Point, camera: CameraState): Point {
 export function FacilityOverlay({ city, camera, selectedId }: { city: City; camera: CameraState; selectedId?: string }) {
   return <div className="facility-overlay" aria-hidden="true">{city.facilities.map((facility) => {
     const screen = toScreen(facility.position, camera); const iconUrl = facilityIconUrl(facility.icon, facility.type);
-    return <div key={facility.id} className={`facility-marker${facility.id === selectedId ? " is-selected" : ""}`} style={{ transform: `translate(${screen.x}px, ${screen.y}px)` }}><span className="facility-marker-icon">{iconUrl ? <img src={iconUrl} alt=""/> : <i>?</i>}</span><b>{facility.name}</b></div>;
+    return <div key={facility.id} className={`facility-marker${facility.id === selectedId ? " is-selected" : ""}`} style={{ transform: `translate(${screen.x}px, ${screen.y}px) translateY(-50%)` }}><span className="facility-marker-icon" style={{ backgroundColor: facility.color }}>{iconUrl ? <img src={iconUrl} alt=""/> : <i>?</i>}</span><b>{facility.name}</b></div>;
   })}</div>;
 }
