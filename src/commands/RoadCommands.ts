@@ -1,9 +1,9 @@
 import type { Point } from "../geometry/Point";
-import type { City, Road, RoadEdge, RoadNode } from "../model/City";
+import type { BusLine, BusStop, BusTerminal, City, Road, RoadEdge, RoadNode } from "../model/City";
 import type { Command } from "./Command";
 
 type Notify = () => void;
-export interface RoadSnapshot { roadNodes: RoadNode[]; roads: Road[]; roadEdges: RoadEdge[] }
+export interface RoadSnapshot { roadNodes: RoadNode[]; roads: Road[]; roadEdges: RoadEdge[]; busTerminals?: BusTerminal[]; busLines?: BusLine[]; busStops?: BusStop[] }
 
 export class RoadSnapshotCommand implements Command {
   public constructor(public readonly label: string, private readonly city: City, private readonly before: RoadSnapshot, private readonly after: RoadSnapshot, private readonly notify: Notify) {}
@@ -13,6 +13,9 @@ export class RoadSnapshotCommand implements Command {
     this.city.roadNodes = structuredClone(snapshot.roadNodes);
     this.city.roads = structuredClone(snapshot.roads);
     this.city.roadEdges = structuredClone(snapshot.roadEdges);
+    if (snapshot.busTerminals) this.city.busTerminals = structuredClone(snapshot.busTerminals);
+    if (snapshot.busLines) this.city.busLines = structuredClone(snapshot.busLines);
+    if (snapshot.busStops) this.city.busStops = structuredClone(snapshot.busStops);
     this.notify();
   }
 }

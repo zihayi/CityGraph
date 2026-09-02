@@ -4,7 +4,7 @@ import type { RefObject } from "react";
 import type { EditorTool, KeyboardShortcuts, LayerVisibility } from "../../app/store/editorStore";
 import type { Editor } from "../../editor/Editor";
 import type { TranslationKey } from "../../i18n";
-import type { BuildingContextMenu, BuildingToolSettings, RoadContextMenu, RoadToolSettings, ZoneContextMenu, ZoneToolSettings } from "../../map/MapViewport";
+import type { BuildingContextMenu, BuildingToolSettings, BusToolSettings, RoadContextMenu, RoadToolSettings, ZoneContextMenu, ZoneToolSettings } from "../../map/MapViewport";
 import type { CameraState } from "../../map/MapViewport";
 import { MapCanvas, type MapCanvasHandle } from "../MapCanvas/MapCanvas";
 import { RoadToolPalette } from "../RoadToolPalette/RoadToolPalette";
@@ -14,9 +14,10 @@ import { ZoneLabelOverlay } from "./ZoneLabelOverlay";
 import { BuildingToolPalette } from "../BuildingToolPalette/BuildingToolPalette";
 import { FacilityToolPalette, type FacilityPlacement } from "../FacilityToolPalette/FacilityToolPalette";
 import { FacilityOverlay } from "./FacilityOverlay";
+import { BusToolPalette } from "../BusToolPalette/BusToolPalette";
 
 interface Props {
-  editor: Editor; layers: LayerVisibility; tool: EditorTool; road: RoadToolSettings; zone: ZoneToolSettings; building: BuildingToolSettings; shortcuts: KeyboardShortcuts; inputEnabled: boolean; mapRef: RefObject<MapCanvasHandle | null>;
+  editor: Editor; layers: LayerVisibility; tool: EditorTool; road: RoadToolSettings; zone: ZoneToolSettings; building: BuildingToolSettings; bus: BusToolSettings; shortcuts: KeyboardShortcuts; inputEnabled: boolean; mapRef: RefObject<MapCanvasHandle | null>;
   onZoomChange: (percent: number) => void; validation?: TranslationKey; onValidation: (key?: "road.invalid.water" | "road.invalid.short" | "zone.noRoadArea" | "building.invalid" | "facility.invalid.building") => void; t: (key: TranslationKey) => string;
 }
 export function MapWorkspace(props: Props) {
@@ -34,7 +35,7 @@ export function MapWorkspace(props: Props) {
   const scaleKilometers = scaleMeters / 1000;
   const formatKilometers = (value: number) => value >= 10 ? value.toFixed(0) : value >= 1 ? value.toFixed(1).replace(/\.0$/, "") : value.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
   return <main className={`map-stage${facilityPlacement ? " is-placing-facility" : ""}`} onPointerDownCapture={(event) => { if (event.button !== 0 || props.tool !== "public" || !facilityPlacement || !(event.target instanceof Element) || !event.target.closest(".map-host")) return; event.preventDefault(); event.stopPropagation(); const id = props.mapRef.current?.createFacilityAtClientPosition(event.clientX, event.clientY, facilityPlacement.type, facilityPlacement.name, facilityPlacement.icon); if (id) setFacilityPlacement(undefined); }}>
-    <MapCanvas ref={props.mapRef} editor={props.editor} layers={props.layers} tool={props.tool} road={props.road} zone={props.zone} building={props.building} shortcuts={props.shortcuts} inputEnabled={props.inputEnabled} onZoomChange={(percent, scale) => { props.onZoomChange(percent); setPixelsPerMeter(scale); }} onRotationChange={onRotation} onCameraChange={setCamera} onValidation={props.onValidation} onRoadContextMenu={(menu) => { setRoadMenu(menu); if (menu) { setZoneMenu(undefined); setBuildingMenu(undefined); } }} onZoneContextMenu={(menu) => { setZoneMenu(menu); if (menu) { setRoadMenu(undefined); setBuildingMenu(undefined); } }} onBuildingContextMenu={(menu) => { setBuildingMenu(menu); if (menu) { setRoadMenu(undefined); setZoneMenu(undefined); } }} onRoadMeasurement={setMeasurement}/>
+    <MapCanvas ref={props.mapRef} editor={props.editor} layers={props.layers} tool={props.tool} road={props.road} zone={props.zone} building={props.building} bus={props.bus} shortcuts={props.shortcuts} inputEnabled={props.inputEnabled} onZoomChange={(percent, scale) => { props.onZoomChange(percent); setPixelsPerMeter(scale); }} onRotationChange={onRotation} onCameraChange={setCamera} onValidation={props.onValidation} onRoadContextMenu={(menu) => { setRoadMenu(menu); if (menu) { setZoneMenu(undefined); setBuildingMenu(undefined); } }} onZoneContextMenu={(menu) => { setZoneMenu(menu); if (menu) { setRoadMenu(undefined); setBuildingMenu(undefined); } }} onBuildingContextMenu={(menu) => { setBuildingMenu(menu); if (menu) { setRoadMenu(undefined); setZoneMenu(undefined); } }} onRoadMeasurement={setMeasurement}/>
     {props.layers.roads && <RoadNameOverlay city={props.editor.state.city} camera={camera}/>}
     {props.layers.zoning && <ZoneLabelOverlay city={props.editor.state.city} camera={camera} opacity={props.zone.layerOpacity}/>}
     {props.layers.facilities && <FacilityOverlay city={props.editor.state.city} camera={camera} selectedId={props.editor.selection?.kind === "facility" ? props.editor.selection.id : undefined}/>}
@@ -42,6 +43,7 @@ export function MapWorkspace(props: Props) {
     {props.tool === "zones" && <ZoneToolPalette editor={props.editor} t={props.t}/>}
     {props.tool === "buildings" && <BuildingToolPalette editor={props.editor} t={props.t}/>}
     {props.tool === "public" && <FacilityToolPalette selectedType={facilityPlacement?.type} onSelect={(facility) => { setFacilityPlacement(facility); props.onValidation(); }} t={props.t}/>}
+    {props.tool === "transit" && <BusToolPalette editor={props.editor} t={props.t}/>}
     {props.validation && <div className="validation-toast">{props.t(props.validation)}</div>}
     {measurement && <div className="road-measurement" style={{ left: measurement.x, top: measurement.y }}>{measurement.text}</div>}
     {roadMenu && <div className="road-context-menu glass-panel" style={{ left: roadMenu.x, top: roadMenu.y }}><button type="button" disabled={!roadMenu.canAdd} onClick={() => { const nodeId = props.editor.splitRoadEdge(roadMenu.edgeId, roadMenu.point); props.editor.select({ kind: "node", id: nodeId }); setRoadMenu(undefined); }}>+ {props.t("road.node.add")}</button><button type="button" disabled={!roadMenu.canDelete || !roadMenu.nodeId} onClick={() => { if (roadMenu.nodeId) props.editor.dissolveRoadNode(roadMenu.nodeId); setRoadMenu(undefined); }}>- {props.t("road.node.delete")}</button></div>}

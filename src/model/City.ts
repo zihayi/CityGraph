@@ -142,6 +142,42 @@ export interface TransitLine {
   stationIds: string[];
 }
 
+export interface BusTerminal {
+  id: string;
+  name: string;
+  position: Point;
+}
+
+export interface BusPathStep {
+  roadEdgeId: string;
+  forward: boolean;
+}
+
+export type BusLineDirection = "start-to-end";
+
+export interface BusLine {
+  id: string;
+  name: string;
+  color: string;
+  startTerminalId: string;
+  endTerminalId: string;
+  path: BusPathStep[];
+  direction: BusLineDirection;
+  stopIds: string[];
+}
+
+export type BusStopSide = "left" | "right";
+
+export interface BusStop {
+  id: string;
+  name: string;
+  lineId: string;
+  roadEdgeId: string;
+  fraction: number;
+  position: Point;
+  side: BusStopSide;
+}
+
 export interface MapLabel extends Point {
   id: string;
   text: string;
@@ -166,5 +202,8 @@ export interface City {
   facilities: FacilityPOI[];
   transitLines: TransitLine[];
   transitStations: TransitStation[];
+  busTerminals: BusTerminal[];
+  busLines: BusLine[];
+  busStops: BusStop[];
   labels: MapLabel[];
 }

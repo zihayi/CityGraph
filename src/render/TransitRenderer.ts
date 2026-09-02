@@ -1,8 +1,10 @@
 import { Container, Graphics, Text } from "pixi.js";
+import type { EditorSelection } from "../editor/Editor";
 import type { City, TransitStation } from "../model/City";
+import { BusRenderer } from "./BusRenderer";
 
 export class TransitRenderer {
-  public render(city: City): Container {
+  public render(city: City, selection: EditorSelection = null, camera = { zoom: 1, rotation: 0 }): Container {
     const container = new Container();
     const stations = new Map<string, TransitStation>(city.transitStations.map((station) => [station.id, station]));
 
@@ -37,6 +39,8 @@ export class TransitRenderer {
       letter.position.set(station.x, station.y + 0.5);
       container.addChild(marker, letter);
     }
+
+    if (city.busLines?.length || city.busTerminals?.length || city.busStops?.length) container.addChild(new BusRenderer().render(city, selection, camera));
 
     return container;
   }

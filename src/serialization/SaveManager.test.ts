@@ -79,6 +79,55 @@ describe("SaveManager", () => {
     expect(loaded.camera.rotation).toBe(camera.rotation);
   });
 
+  it("round-trips bus relationships alongside legacy transit data", async () => {
+    const saves = new MemoryDirectory(); installStorage(saves);
+    const city = createNewCity({ name: "Connected Buses", size: "small", terrain: "flat", lakeCount: 1 });
+    city.roadNodes.push({ id: "west-node", x: 100, y: 200 }, { id: "east-node", x: 500, y: 200 });
+    city.roads.push({ id: "crosstown-road", name: "Crosstown Road", category: "normal", subtype: "medium", width: 14, segmentIds: ["crosstown-edge"] });
+    city.roadEdges.push({ id: "crosstown-edge", roadId: "crosstown-road", name: "Crosstown Road", startNodeId: "west-node", endNodeId: "east-node", structure: "ground", level: 0, geometry: { type: "line" } });
+    city.transitStations.push({ id: "legacy-station", x: 300, y: 100, type: "metro", name: "Central" });
+    city.transitLines.push({ id: "legacy-line", name: "Metro One", color: 0x336699, stationIds: ["legacy-station"] });
+    city.busTerminals.push({ id: "west-terminal", name: "West", position: { x: 100, y: 200 } }, { id: "east-terminal", name: "East", position: { x: 500, y: 200 } });
+    city.busLines.push({ id: "bus-line", name: "B1", color: "#336699", startTerminalId: "west-terminal", endTerminalId: "east-terminal", path: [{ roadEdgeId: "crosstown-edge", forward: true }], direction: "start-to-end", stopIds: ["central-stop"] });
+    city.busStops.push({ id: "central-stop", name: "Central", lineId: "bus-line", roadEdgeId: "crosstown-edge", fraction: 0.5, position: { x: 300, y: 200 }, side: "right" });
+
+    await new SaveManager().saveAs(city.name, city, { x: 0, y: 0, zoom: 1, rotation: 0 });
+
+    const folder = saves.directories.get(city.name)!;
+    const map = JSON.parse(folder.files.get("map.json")!.content);
+    expect(map).toMatchObject({ busTerminals: city.busTerminals, busLines: city.busLines, busStops: city.busStops });
+    const loaded = await new SaveManager().load();
+    expect(loaded.city.busTerminals).toEqual(city.busTerminals);
+    expect(loaded.city.busLines).toEqual(city.busLines);
+    expect(loaded.city.busStops).toEqual(city.busStops);
+    expect(loaded.city.busLines[0]?.startTerminalId).toBe(loaded.city.busTerminals[0]?.id);
+    expect(loaded.city.busLines[0]?.endTerminalId).toBe(loaded.city.busTerminals[1]?.id);
+    expect(loaded.city.busLines[0]?.stopIds).toEqual(loaded.city.busStops.map((stop) => stop.id));
+    expect(loaded.city.busStops[0]?.lineId).toBe(loaded.city.busLines[0]?.id);
+    expect(loaded.city.transitStations).toEqual(city.transitStations);
+    expect(loaded.city.transitLines).toEqual(city.transitLines);
+  });
+
+  it("initializes missing bus fields without dropping transit or facilities", async () => {
+    const saves = new MemoryDirectory(); installStorage(saves);
+    const city = createNewCity({ name: "Pre-Bus Save", size: "small", terrain: "flat", lakeCount: 1 });
+    city.transitStations.push({ id: "station", x: 20, y: 30, type: "train", name: "Old Station" });
+    city.transitLines.push({ id: "line", name: "Old Line", color: 0x445566, stationIds: ["station"] });
+    city.facilities.push({ id: "facility", type: "store", name: "Old Store", position: { x: 12, y: 18 }, icon: "store.svg", color: defaultFacilityColor });
+    await new SaveManager().saveAs(city.name, city, { x: 0, y: 0, zoom: 1, rotation: 0 });
+    const mapFile = saves.directories.get(city.name)!.files.get("map.json")!;
+    const map = JSON.parse(mapFile.content) as Record<string, unknown>;
+    delete map.busTerminals; delete map.busLines; delete map.busStops; mapFile.content = JSON.stringify(map);
+
+    const loaded = await new SaveManager().load();
+    expect(loaded.city.busTerminals).toEqual([]);
+    expect(loaded.city.busLines).toEqual([]);
+    expect(loaded.city.busStops).toEqual([]);
+    expect(loaded.city.transitStations).toEqual(city.transitStations);
+    expect(loaded.city.transitLines).toEqual(city.transitLines);
+    expect(loaded.city.facilities).toEqual(city.facilities);
+  });
+
   it("rejects incompatible format versions without crashing", async () => {
     const folder = new MemoryDirectory();
     folder.files.set("metadata.json", Object.assign(new MemoryFile(), { content: JSON.stringify({ formatVersion: 99, saveName: "Future", updatedAt: "2026-01-01T00:00:00Z" }) }));

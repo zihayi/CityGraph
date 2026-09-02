@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { EditorTool, LayerId, LayerVisibility } from "../../app/store/editorStore";
 import type { Editor } from "../../editor/Editor";
 import type { TranslationKey } from "../../i18n";
-import type { Building, BuildingStyle, BuildingType, Road, RoadCategory, RoadStructure, RoadSubtype, Zone, ZoneType } from "../../model/City";
+import type { Building, BuildingStyle, BuildingType, BusLine, BusStop, BusStopSide, BusTerminal, Road, RoadCategory, RoadStructure, RoadSubtype, Zone, ZoneType } from "../../model/City";
 import { roadIdentityGroupEdges, selectedRoadEdge } from "../../editor/RoadIdentity";
 import { formatZoneArea, formatZonePerimeter, zoneArea, zonePerimeter } from "../../geometry/ZoneGeometry";
 import { defaultZoneColors, defaultZoneIconColors, defaultZoneIcons, editableZoneTypes, zoneIconIds } from "../../model/ZoneStyle";
@@ -81,6 +81,45 @@ function FacilityPropertyForm({ editor, facility, t }: { editor: Editor; facilit
   return <div className="property-form property-view"><label>{t("common.name")}<input value={name} onChange={(event) => setName(event.target.value)} onBlur={() => { if (name !== facility.name) editor.updateFacility(facility.id, { name }); }}/></label><p><b>{t("facility.type")}</b>{facilityTypeName(facility.type, locale)}</p><label>{t("facility.color")}<input type="color" value={facility.color} onChange={(event) => editor.updateFacility(facility.id, { color: event.target.value })}/></label><p><b>{t("facility.position")}</b>{facility.position.x.toFixed(1)}, {facility.position.y.toFixed(1)}</p><button className="danger-action" type="button" onClick={() => editor.deleteSelected()}><Trash2 size={16}/>{t("common.delete")}</button></div>;
 }
 
+function BusTerminalPropertyForm({ editor, terminal, t }: { editor: Editor; terminal: BusTerminal; t: (key: TranslationKey) => string }) {
+  const [name, setName] = useState(terminal.name);
+  useEffect(() => setName(terminal.name), [terminal.id, terminal.name]);
+  return <div className="property-form"><label>{t("common.name")}<input value={name} onChange={(event) => setName(event.target.value)} onBlur={() => { if (name !== terminal.name) editor.updateBusTerminal(terminal.id, { name }); }}/></label><p>{t("properties.coordinates")}: {terminal.position.x.toFixed(1)}, {terminal.position.y.toFixed(1)}</p><button className="danger-action" type="button" onClick={() => editor.deleteSelected()}><Trash2 size={16}/>{t("common.delete")}</button></div>;
+}
+
+function BusLinePropertyForm({ editor, line, t }: { editor: Editor; line: BusLine; t: (key: TranslationKey) => string }) {
+  const [name, setName] = useState(line.name);
+  useEffect(() => setName(line.name), [line.id, line.name]);
+  const terminals = editor.state.city.busTerminals ?? [];
+  const startTerminal = terminals.find((terminal) => terminal.id === line.startTerminalId);
+  const endTerminal = terminals.find((terminal) => terminal.id === line.endTerminalId);
+  return <div className="property-form property-view">
+    <label>{t("common.name")}<input value={name} onChange={(event) => setName(event.target.value)} onBlur={() => { if (name !== line.name) editor.updateBusLine(line.id, { name }); }}/></label>
+    <label>{t("bus.lineColor")}<input type="color" value={line.color} onChange={(event) => editor.updateBusLine(line.id, { color: event.target.value })}/></label>
+    <p><b>{t("bus.startTerminal")}</b>{startTerminal?.name ?? "-"}</p><p><b>{t("bus.endTerminal")}</b>{endTerminal?.name ?? "-"}</p>
+    <p><b>{t("bus.pathSegmentCount")}</b>{line.path.length}</p><p><b>{t("bus.stopCount")}</b>{line.stopIds.length}</p><p><b>{t("bus.direction")}</b>{t("bus.direction.startToEnd")}</p>
+    <button className="danger-action" type="button" onClick={() => editor.deleteSelected()}><Trash2 size={16}/>{t("common.delete")}</button>
+  </div>;
+}
+
+function BusStopPropertyForm({ editor, stop, t }: { editor: Editor; stop: BusStop; t: (key: TranslationKey) => string }) {
+  const [name, setName] = useState(stop.name); const [fraction, setFraction] = useState(String(stop.fraction));
+  useEffect(() => { setName(stop.name); setFraction(String(stop.fraction)); }, [stop.id, stop.name, stop.fraction]);
+  const line = (editor.state.city.busLines ?? []).find((candidate) => candidate.id === stop.lineId);
+  const roadEdge = editor.state.city.roadEdges.find((edge) => edge.id === stop.roadEdgeId);
+  const commitFraction = () => {
+    const parsed = Number(fraction); const value = Number.isFinite(parsed) ? Math.max(0, Math.min(1, parsed)) : stop.fraction;
+    setFraction(String(value)); if (value !== stop.fraction) editor.updateBusStop(stop.id, { fraction: value });
+  };
+  return <div className="property-form property-view">
+    <label>{t("common.name")}<input value={name} onChange={(event) => setName(event.target.value)} onBlur={() => { if (name !== stop.name) editor.updateBusStop(stop.id, { name }); }}/></label>
+    <p><b>{t("bus.lineName")}</b>{line?.name ?? "-"}</p><p><b>{t("bus.roadEdge")}</b>{roadEdge?.name ?? stop.roadEdgeId}</p>
+    <label>{t("bus.fraction")}<input type="number" min="0" max="1" step="0.01" value={fraction} onChange={(event) => setFraction(event.target.value)} onBlur={commitFraction} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}/></label>
+    <label>{t("bus.side")}<select value={stop.side} onChange={(event) => editor.updateBusStop(stop.id, { side: event.target.value as BusStopSide })}><option value="left">{t("bus.side.left")}</option><option value="right">{t("bus.side.right")}</option></select></label>
+    <button className="danger-action" type="button" onClick={() => editor.deleteSelected()}><Trash2 size={16}/>{t("common.delete")}</button>
+  </div>;
+}
+
 interface Props { editor: Editor; tool: EditorTool; visibility: LayerVisibility; zoningOpacity: number; onZoningOpacity: (opacity: number) => void; onToggleLayer: (id: LayerId) => void; t: (key: TranslationKey) => string }
 export function RightPanel({ editor, tool, visibility, zoningOpacity, onZoningOpacity, onToggleLayer, t }: Props) {
   const [layersOpen, setLayersOpen] = useState(false); const selection = editor.selection;
@@ -92,11 +131,14 @@ export function RightPanel({ editor, tool, visibility, zoningOpacity, onZoningOp
   const zone = selection?.kind === "zone" ? editor.state.city.zones.find((item) => item.id === selection.id) : undefined;
   const building = selection?.kind === "building" ? editor.state.city.buildings.find((item) => item.id === selection.id) : undefined;
   const facility = selection?.kind === "facility" ? editor.state.city.facilities.find((item) => item.id === selection.id) : undefined;
+  const busTerminal = selection?.kind === "bus-terminal" ? (editor.state.city.busTerminals ?? []).find((item) => item.id === selection.id) : undefined;
+  const busLine = selection?.kind === "bus-line" ? (editor.state.city.busLines ?? []).find((item) => item.id === selection.id) : undefined;
+  const busStop = selection?.kind === "bus-stop" ? (editor.state.city.busStops ?? []).find((item) => item.id === selection.id) : undefined;
   return <aside className="right-floating-ui">
     <button className={`layers-orb ${layersOpen ? "is-active" : ""}`} type="button" title={t("layers.title")} onClick={() => setLayersOpen((value) => !value)}><Layers3 size={22}/></button>
     {layersOpen && <section className="floating-panel layers-popover glass-panel"><header><strong>{t("layers.title")}</strong><button type="button" onClick={() => setLayersOpen(false)}><X size={16}/></button></header><div className="layer-list">{layers.map((item) => <div className="layer-item" key={item.id}><button type="button" onClick={() => onToggleLayer(item.id)}><span className={`layer-check ${visibility[item.id] ? "is-checked" : ""}`}>{visibility[item.id] && <Check size={13}/>}</span><span className="layer-name">{t(item.key)}</span><Eye size={16} className={visibility[item.id] ? "" : "is-muted"}/><GripVertical size={15} className="grip"/></button>{item.id === "zoning" && <label className="layer-opacity"><span>{t("zone.layerOpacity")}</span><input type="range" min="0.05" max="1" step="0.05" value={zoningOpacity} onChange={(event) => onZoningOpacity(Number(event.target.value))}/><output>{Math.round(zoningOpacity * 100)}%</output></label>}</div>)}</div></section>}
-    {(road || node || zone || building || facility) && <section className="floating-panel properties-popover glass-panel"><header><strong>{facility ? t("properties.facility") : zone ? t("properties.zone") : building ? t("properties.building") : road ? t("properties.road") : t("properties.node")}</strong><button type="button" onClick={() => editor.select(null)}><X size={16}/></button></header>
-      {facility ? <FacilityPropertyForm editor={editor} facility={facility} t={t}/> : zone ? <ZonePropertyForm editor={editor} zone={zone} readOnly={tool === "select"} t={t}/> : building ? <BuildingPropertyForm editor={editor} building={building} t={t}/> : road && roadEdge ? <RoadPropertyForm editor={editor} road={road} edgeId={roadEdge.id} edgeName={roadEdge.name} groupSize={groupSize} structure={structure} t={t}/> : node && <div className="property-form"><p>{t("properties.coordinates")}: {node.x.toFixed(1)}, {node.y.toFixed(1)}</p><button className="danger-action" type="button" onClick={() => editor.deleteSelected()}><Trash2 size={16}/>{t("common.delete")}</button></div>}
+    {(road || node || zone || building || facility || busTerminal || busLine || busStop) && <section className="floating-panel properties-popover glass-panel"><header><strong>{busTerminal ? t("properties.busTerminal") : busLine ? t("properties.busLine") : busStop ? t("properties.busStop") : facility ? t("properties.facility") : zone ? t("properties.zone") : building ? t("properties.building") : road ? t("properties.road") : t("properties.node")}</strong><button type="button" onClick={() => editor.select(null)}><X size={16}/></button></header>
+      {busTerminal ? <BusTerminalPropertyForm editor={editor} terminal={busTerminal} t={t}/> : busLine ? <BusLinePropertyForm editor={editor} line={busLine} t={t}/> : busStop ? <BusStopPropertyForm editor={editor} stop={busStop} t={t}/> : facility ? <FacilityPropertyForm editor={editor} facility={facility} t={t}/> : zone ? <ZonePropertyForm editor={editor} zone={zone} readOnly={tool === "select"} t={t}/> : building ? <BuildingPropertyForm editor={editor} building={building} t={t}/> : road && roadEdge ? <RoadPropertyForm editor={editor} road={road} edgeId={roadEdge.id} edgeName={roadEdge.name} groupSize={groupSize} structure={structure} t={t}/> : node && <div className="property-form"><p>{t("properties.coordinates")}: {node.x.toFixed(1)}, {node.y.toFixed(1)}</p><button className="danger-action" type="button" onClick={() => editor.deleteSelected()}><Trash2 size={16}/>{t("common.delete")}</button></div>}
     </section>}
   </aside>;
 }

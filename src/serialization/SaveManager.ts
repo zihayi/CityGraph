@@ -1,11 +1,11 @@
 import type { CameraState } from "../map/MapViewport";
-import { defaultFacilityColor, type City, type FacilityPOI, type MapSize, type Road, type RoadCategory, type RoadEdge, type RoadNode, type RoadStructure, type RoadSubtype, type TerrainType, type WaterArea, type Zone } from "../model/City";
+import { defaultFacilityColor, type BusLine, type BusStop, type BusTerminal, type City, type FacilityPOI, type MapSize, type Road, type RoadCategory, type RoadEdge, type RoadNode, type RoadStructure, type RoadSubtype, type TerrainType, type WaterArea, type Zone } from "../model/City";
 import type { Building, BuildingStyle, BuildingType } from "../model/City";
 import { isValidBuildingFootprint } from "../geometry/BuildingGeometry";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { appDataDir, join } from "@tauri-apps/api/path";
 
-const FORMAT_VERSION = 7;
+const FORMAT_VERSION = 8;
 const GAME_VERSION = "0.2.0";
 
 interface MetadataDocument {
@@ -28,6 +28,9 @@ interface MapDocument {
   pois: City["pois"];
   transitLines: City["transitLines"];
   transitStations: City["transitStations"];
+  busTerminals: BusTerminal[];
+  busLines: BusLine[];
+  busStops: BusStop[];
   labels: City["labels"];
 }
 interface RoadsDocument { roadNodes: RoadNode[]; roads: Road[]; roadEdges: RoadEdge[] }
@@ -62,6 +65,9 @@ const buildingStyles: BuildingStyle[] = ["modern", "chinese", "classical", "indu
 function isBuilding(value: unknown): value is Building { if (!isRecord(value) || typeof value.id !== "string" || !buildingTypes.includes(value.type as BuildingType) || typeof value.subtype !== "string" || typeof value.floors !== "number" || !Number.isFinite(value.floors) || value.floors < 1 || typeof value.height !== "number" || !Number.isFinite(value.height) || value.height < 1 || !buildingStyles.includes(value.style as BuildingStyle) || !isRecord(value.footprint) || !Array.isArray(value.footprint.outer) || !value.footprint.outer.every(isPoint) || !Array.isArray(value.footprint.holes) || !value.footprint.holes.every((hole) => Array.isArray(hole) && hole.every(isPoint))) return false; const footprint = { outer: value.footprint.outer, holes: value.footprint.holes } as Building["footprint"]; return (value.name === undefined || typeof value.name === "string") && (value.description === undefined || typeof value.description === "string") && isValidBuildingFootprint(footprint); }
 type SavedFacility = Omit<FacilityPOI, "color"> & { color?: string };
 function isFacility(value: unknown): value is SavedFacility { return isRecord(value) && typeof value.id === "string" && typeof value.type === "string" && Boolean(value.type) && typeof value.name === "string" && typeof value.icon === "string" && (value.color === undefined || typeof value.color === "string" && /^#[0-9a-f]{6}$/i.test(value.color)) && isPoint(value.position); }
+function isBusTerminal(value: unknown): value is BusTerminal { return isRecord(value) && typeof value.id === "string" && typeof value.name === "string" && isPoint(value.position); }
+function isBusLine(value: unknown): value is BusLine { return isRecord(value) && typeof value.id === "string" && typeof value.name === "string" && typeof value.color === "string" && typeof value.startTerminalId === "string" && typeof value.endTerminalId === "string" && value.direction === "start-to-end" && Array.isArray(value.path) && value.path.every((step) => isRecord(step) && typeof step.roadEdgeId === "string" && typeof step.forward === "boolean") && Array.isArray(value.stopIds) && value.stopIds.every((id) => typeof id === "string"); }
+function isBusStop(value: unknown): value is BusStop { return isRecord(value) && typeof value.id === "string" && typeof value.name === "string" && typeof value.lineId === "string" && typeof value.roadEdgeId === "string" && typeof value.fraction === "number" && Number.isFinite(value.fraction) && value.fraction >= 0 && value.fraction <= 1 && isPoint(value.position) && ["left", "right"].includes(String(value.side)); }
 function migrateLegacyBuilding(value: unknown): Building | undefined { if (!isRecord(value) || typeof value.id !== "string" || !buildingTypes.includes(value.type as BuildingType) || ![value.x, value.y, value.width, value.height, value.rotation].every((entry) => typeof entry === "number" && Number.isFinite(entry)) || Number(value.width) <= 0 || Number(value.height) <= 0) return undefined; const x = Number(value.x); const y = Number(value.y); const width = Number(value.width); const depth = Number(value.height); const rotation = Number(value.rotation); const cos = Math.cos(rotation); const sin = Math.sin(rotation); const local = [{ x: 0, y: 0 }, { x: width, y: 0 }, { x: width, y: depth }, { x: 0, y: depth }]; return { id: value.id, footprint: { outer: local.map((point) => ({ x: x + point.x * cos - point.y * sin, y: y + point.x * sin + point.y * cos })), holes: [] }, type: value.type as BuildingType, subtype: "", floors: 1, height: 3, style: "modern", name: typeof value.name === "string" ? value.name : undefined, description: typeof value.description === "string" ? value.description : undefined }; }
 
 export class SaveManager {
@@ -149,7 +155,7 @@ export class SaveManager {
     const now = new Date().toISOString();
     return {
       metadata: { formatVersion: FORMAT_VERSION, gameVersion: GAME_VERSION, saveName, mapName: city.name, createdAt: createdAt ?? now, updatedAt: now, autosave },
-      map: { mapSize: city.mapSize, worldBounds: city.bounds, terrain: city.terrain, water: city.waters, camera, blocks: city.blocks, parks: city.parks, pois: city.pois, transitLines: city.transitLines, transitStations: city.transitStations, labels: city.labels },
+      map: { mapSize: city.mapSize, worldBounds: city.bounds, terrain: city.terrain, water: city.waters, camera, blocks: city.blocks, parks: city.parks, pois: city.pois, transitLines: city.transitLines, transitStations: city.transitStations, busTerminals: city.busTerminals, busLines: city.busLines, busStops: city.busStops, labels: city.labels },
       roads: { roadNodes: city.roadNodes, roads: city.roads, roadEdges: city.roadEdges },
       zones: { zones: city.zones },
       buildings: { buildings: city.buildings },
@@ -176,7 +182,7 @@ export class SaveManager {
     if (!isRecord(metadataValue) || !isRecord(mapValue) || !isRecord(roadsValue) || !isRecord(zonesValue)) throw new SaveError("invalid");
     const version = metadataValue.formatVersion;
     if (typeof version !== "number") throw new SaveError("invalid");
-    if (version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== FORMAT_VERSION) throw new SaveError("version", version);
+    if (version !== 2 && version !== 3 && version !== 4 && version !== 5 && version !== 6 && version !== 7 && version !== FORMAT_VERSION) throw new SaveError("version", version);
     const bounds = mapValue.worldBounds;
     const camera = mapValue.camera;
     if (!isRecord(bounds) || !isRecord(camera) || !["small", "medium", "large", "unlimited"].includes(String(mapValue.mapSize)) || !["flat", "lakes"].includes(String(mapValue.terrain))) throw new SaveError("invalid");
@@ -201,6 +207,14 @@ export class SaveManager {
     const zones = Array.isArray(zonesValue.zones) ? zonesValue.zones : []; if (!zones.every(isZone) || new Set(zones.map((zone) => zone.id)).size !== zones.length) throw new SaveError("invalid");
     let buildings: Building[]; if (isRecord(buildingsValue) && Array.isArray(buildingsValue.buildings)) { if (!buildingsValue.buildings.every(isBuilding)) throw new SaveError("invalid"); buildings = buildingsValue.buildings as Building[]; } else if (version === FORMAT_VERSION) throw new SaveError("invalid"); else { const legacy = Array.isArray(mapValue.buildings) ? mapValue.buildings : []; buildings = legacy.map(migrateLegacyBuilding).filter((building): building is Building => Boolean(building)); if (buildings.length !== legacy.length) throw new SaveError("invalid"); } if (new Set(buildings.map((building) => building.id)).size !== buildings.length) throw new SaveError("invalid");
     if (version === FORMAT_VERSION && (!isRecord(facilitiesValue) || !Array.isArray(facilitiesValue.facilities))) throw new SaveError("invalid"); const savedFacilities = isRecord(facilitiesValue) && Array.isArray(facilitiesValue.facilities) ? facilitiesValue.facilities : []; if (!savedFacilities.every(isFacility) || new Set(savedFacilities.map((facility) => facility.id)).size !== savedFacilities.length) throw new SaveError("invalid"); const facilities: FacilityPOI[] = savedFacilities.map((facility) => ({ ...facility, color: facility.color ?? defaultFacilityColor }));
+    const busTerminals = Array.isArray(mapValue.busTerminals) ? mapValue.busTerminals : []; const busLines = Array.isArray(mapValue.busLines) ? mapValue.busLines : []; const busStops = Array.isArray(mapValue.busStops) ? mapValue.busStops : [];
+    if (!busTerminals.every(isBusTerminal) || !busLines.every(isBusLine) || !busStops.every(isBusStop)) throw new SaveError("invalid");
+    const terminalIds = new Set(busTerminals.map((terminal) => terminal.id)); const busLineIds = new Set(busLines.map((line) => line.id)); const busStopIds = new Set(busStops.map((stop) => stop.id));
+    if (terminalIds.size !== busTerminals.length || busLineIds.size !== busLines.length || busStopIds.size !== busStops.length) throw new SaveError("invalid");
+    if (busLines.some((line) => !terminalIds.has(line.startTerminalId) || !terminalIds.has(line.endTerminalId) || line.path.some((step) => !edgeIds.has(step.roadEdgeId)) || line.stopIds.some((stopId) => !busStopIds.has(stopId) || busStops.find((stop) => stop.id === stopId)?.lineId !== line.id))) throw new SaveError("invalid");
+    if (busStops.some((stop) => !busLineIds.has(stop.lineId) || !edgeIds.has(stop.roadEdgeId) || !busLines.find((line) => line.id === stop.lineId)?.stopIds.includes(stop.id) || !busLines.find((line) => line.id === stop.lineId)?.path.some((step) => step.roadEdgeId === stop.roadEdgeId))) throw new SaveError("invalid");
+    const terminalLookup = new Map(busTerminals.map((terminal) => [terminal.id, terminal])); const edgeLookup = new Map(roadEdges.map((edge) => [edge.id, edge])); const nodeLookup = new Map(roadNodes.map((node) => [node.id, node]));
+    if (busLines.some((line) => { let firstNodeId: string | undefined; let currentNodeId: string | undefined; for (const step of line.path) { const edge = edgeLookup.get(step.roadEdgeId); if (!edge) return true; const from = step.forward ? edge.startNodeId : edge.endNodeId; const to = step.forward ? edge.endNodeId : edge.startNodeId; if (currentNodeId && currentNodeId !== from) return true; firstNodeId ??= from; currentNodeId = to; } const start = nodeLookup.get(firstNodeId ?? ""); const end = nodeLookup.get(currentNodeId ?? ""); const startTerminal = terminalLookup.get(line.startTerminalId); const endTerminal = terminalLookup.get(line.endTerminalId); return !start || !end || !startTerminal || !endTerminal || Math.hypot(start.x - startTerminal.position.x, start.y - startTerminal.position.y) >= 1e-4 || Math.hypot(end.x - endTerminal.position.x, end.y - endTerminal.position.y) >= 1e-4; })) throw new SaveError("invalid");
     const city: City = {
       id: crypto.randomUUID(), name: String(metadataValue.mapName || "Loaded City"), bounds: bounds as unknown as City["bounds"], mapSize: mapValue.mapSize as MapSize, terrain: mapValue.terrain as TerrainType,
       waters: mapValue.water as WaterArea[], roadNodes, roads, roadEdges,
@@ -212,6 +226,9 @@ export class SaveManager {
       facilities,
       transitLines: Array.isArray(mapValue.transitLines) ? mapValue.transitLines as City["transitLines"] : [],
       transitStations: Array.isArray(mapValue.transitStations) ? mapValue.transitStations as City["transitStations"] : [],
+      busTerminals: busTerminals as BusTerminal[],
+      busLines: busLines as BusLine[],
+      busStops: busStops as BusStop[],
       labels: Array.isArray(mapValue.labels) ? mapValue.labels as City["labels"] : [],
     };
     return { city, camera: camera as unknown as CameraState, saveName: String(metadataValue.saveName || city.name) };

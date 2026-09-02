@@ -285,6 +285,9 @@ export function createDemoCity(): City {
     transitLines: [
       { id: "line-river", name: "River Line", color: 0x4f82d7, stationIds: ["station-west", "station-civic", "station-east", "station-north"] },
     ],
+    busTerminals: [],
+    busLines: [],
+    busStops: [],
     labels: [
       { id: "label-riverside", x: 180, y: 340, text: "RIVERSIDE", type: "district" },
       { id: "label-central", x: 835, y: 350, text: "CENTRAL", type: "district" },

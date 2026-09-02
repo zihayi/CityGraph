@@ -1,7 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
 import type { EditorTool, KeyboardShortcuts, LayerVisibility } from "../../app/store/editorStore";
 import type { Editor } from "../../editor/Editor";
-import { MapViewport, type BuildingContextMenu, type BuildingToolSettings, type CameraState, type RoadContextMenu, type RoadToolSettings, type ZoneContextMenu, type ZoneToolSettings } from "../../map/MapViewport";
+import { MapViewport, type BuildingContextMenu, type BuildingToolSettings, type BusToolSettings, type CameraState, type RoadContextMenu, type RoadToolSettings, type ZoneContextMenu, type ZoneToolSettings } from "../../map/MapViewport";
 
 export interface MapCanvasHandle {
   zoomIn: () => void;
@@ -19,6 +19,7 @@ interface Props {
   road: RoadToolSettings;
   zone: ZoneToolSettings;
   building: BuildingToolSettings;
+  bus: BusToolSettings;
   shortcuts: KeyboardShortcuts;
   inputEnabled: boolean;
   onZoomChange: (percent: number, pixelsPerMeter: number) => void;
@@ -44,7 +45,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(p
 
   useEffect(() => {
     const host = hostRef.current; if (!host) return;
-    const viewport = new MapViewport(host, props.editor, { layers: props.layers, tool: props.tool, road: props.road, zone: props.zone, building: props.building, shortcuts: props.shortcuts, inputEnabled: props.inputEnabled, onZoomChange: (percent, scale) => callbacks.current.onZoomChange(percent, scale), onRotationChange: (value) => callbacks.current.onRotationChange(value), onCameraChange: (value) => callbacks.current.onCameraChange(value), onValidation: (value) => callbacks.current.onValidation(value), onRoadContextMenu: (menu) => callbacks.current.onRoadContextMenu(menu), onZoneContextMenu: (menu) => callbacks.current.onZoneContextMenu(menu), onBuildingContextMenu: (menu) => callbacks.current.onBuildingContextMenu(menu), onRoadMeasurement: (measurement) => callbacks.current.onRoadMeasurement(measurement) });
+    const viewport = new MapViewport(host, props.editor, { layers: props.layers, tool: props.tool, road: props.road, zone: props.zone, building: props.building, bus: props.bus, shortcuts: props.shortcuts, inputEnabled: props.inputEnabled, onZoomChange: (percent, scale) => callbacks.current.onZoomChange(percent, scale), onRotationChange: (value) => callbacks.current.onRotationChange(value), onCameraChange: (value) => callbacks.current.onCameraChange(value), onValidation: (value) => callbacks.current.onValidation(value), onRoadContextMenu: (menu) => callbacks.current.onRoadContextMenu(menu), onZoneContextMenu: (menu) => callbacks.current.onZoneContextMenu(menu), onBuildingContextMenu: (menu) => callbacks.current.onBuildingContextMenu(menu), onRoadMeasurement: (measurement) => callbacks.current.onRoadMeasurement(measurement) });
     viewportRef.current = viewport; void viewport.initialize();
     return () => { viewport.destroy(); viewportRef.current = null; };
   }, [props.editor]);
@@ -53,6 +54,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(p
   useEffect(() => viewportRef.current?.setRoadSettings(props.road), [props.road]);
   useEffect(() => viewportRef.current?.setZoneSettings(props.zone), [props.zone]);
   useEffect(() => viewportRef.current?.setBuildingSettings(props.building), [props.building]);
+  useEffect(() => viewportRef.current?.setBusSettings(props.bus), [props.bus]);
   useEffect(() => viewportRef.current?.setShortcuts(props.shortcuts), [props.shortcuts]);
   useEffect(() => viewportRef.current?.setInputEnabled(props.inputEnabled), [props.inputEnabled]);
   return <div ref={hostRef} className="map-host" aria-label="Interactive city map" />;

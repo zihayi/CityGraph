@@ -680,6 +680,10 @@ button {
 .zone-palette { width: 214px; }
 .building-palette { width: 218px; }
 .facility-palette { width: 220px; }
+.bus-palette { width: 220px; }
+.bus-mode-toggle { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.bus-mode-toggle button small { max-width: 82px; }
+.bus-color-control input[type="color"] { height: 34px; padding: 3px; cursor: pointer; }
 .facility-grid { display: grid; grid-template-columns: 1fr; gap: 5px; }
 .facility-grid button { display: flex; min-width: 0; height: 42px; align-items: center; gap: 10px; border: 1px solid rgb(82 123 137 / 40%); border-radius: 8px; padding: 0 9px; background: rgb(11 40 52 / 60%); color: #d3dfe2; cursor: pointer; }
 .facility-grid button:hover { border-color: #39d1d0; background: rgb(15 93 101 / 55%); color: #f3ffff; }
@@ -824,6 +828,7 @@ button {
   .zone-palette { width: min(210px, calc(100vw - 166px)); }
   .building-palette { width: min(218px, calc(100vw - 166px)); }
   .facility-palette { width: min(220px, calc(100vw - 166px)); }
+  .bus-palette { width: min(220px, calc(100vw - 166px)); }
   .right-floating-ui { top: 72px; right: 8px; bottom: 8px; width: min(280px, calc(100vw - 86px)); }
   .settings-action-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-number-grid { grid-template-columns: 1fr; }

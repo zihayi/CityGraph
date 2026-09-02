@@ -33,6 +33,7 @@ export type LayerId =
 export type LayerVisibility = Record<LayerId, boolean>;
 export type RoadShape = "draw" | "parallel" | "circle" | "polygon";
 export type BuildingMode = "preset" | "free" | "edit";
+export type TransitMode = "terminal" | "line" | "stop" | "edit";
 export type ShortcutAction = "panUp" | "panLeft" | "panDown" | "panRight" | "rotateLeft" | "rotateRight";
 export type KeyboardShortcuts = Record<ShortcutAction, string>;
 
@@ -81,6 +82,8 @@ interface EditorUiState {
   buildingSnapToRoad: boolean;
   buildingSetback: number;
   buildingExtrude: boolean;
+  transitMode: TransitMode;
+  transitLineColor: string;
   shortcuts: KeyboardShortcuts;
   uiOpacity: number;
   musicEnabled: boolean;
@@ -125,6 +128,8 @@ interface EditorUiState {
   setBuildingSnapToRoad: (enabled: boolean) => void;
   setBuildingSetback: (setback: number) => void;
   setBuildingExtrude: (enabled: boolean) => void;
+  setTransitMode: (mode: TransitMode) => void;
+  setTransitLineColor: (color: string) => void;
   setShortcut: (action: ShortcutAction, key: string) => void;
   resetShortcuts: () => void;
   setUiOpacity: (opacity: number) => void;
@@ -187,6 +192,8 @@ export const useEditorStore = create<EditorUiState>((set) => ({
   buildingSnapToRoad: true,
   buildingSetback: 6,
   buildingExtrude: false,
+  transitMode: "terminal",
+  transitLineColor: "#2d8cff",
   shortcuts: savedShortcuts,
   uiOpacity: Math.max(0.35, Math.min(1, Number(localStorage.getItem("citygraph:ui-opacity")) || 0.82)),
   musicEnabled: localStorage.getItem("citygraph:music-enabled") !== "false",
@@ -196,7 +203,7 @@ export const useEditorStore = create<EditorUiState>((set) => ({
   autoSaveSlots: Math.max(1, Number(localStorage.getItem("citygraph:auto-save-slots")) || 5),
   autoSaveRetentionDays: Math.max(1, Number(localStorage.getItem("citygraph:auto-save-retention")) || 30),
   toolbarCollapsed: localStorage.getItem("citygraph:toolbar-collapsed") === "true",
-  setCurrentTool: (currentTool) => set((state) => ({ currentTool, layers: currentTool === "zones" ? { ...state.layers, zoning: true } : currentTool === "buildings" ? { ...state.layers, buildings: true } : currentTool === "public" ? { ...state.layers, facilities: true } : state.layers })),
+  setCurrentTool: (currentTool) => set((state) => ({ currentTool, layers: currentTool === "zones" ? { ...state.layers, zoning: true } : currentTool === "buildings" ? { ...state.layers, buildings: true } : currentTool === "public" ? { ...state.layers, facilities: true } : currentTool === "transit" ? { ...state.layers, transit: true } : state.layers })),
   setZoomPercent: (zoomPercent) => set({ zoomPercent: Math.round(zoomPercent) }),
   toggleLayer: (layer) =>
     set((state) => ({
@@ -234,6 +241,8 @@ export const useEditorStore = create<EditorUiState>((set) => ({
   setBuildingSnapToRoad: (buildingSnapToRoad) => set({ buildingSnapToRoad }),
   setBuildingSetback: (buildingSetback) => set({ buildingSetback: Math.max(0, Math.min(200, Math.round(buildingSetback * 2) / 2)) }),
   setBuildingExtrude: (buildingExtrude) => set({ buildingExtrude }),
+  setTransitMode: (transitMode) => set({ transitMode }),
+  setTransitLineColor: (transitLineColor) => set({ transitLineColor }),
   setShortcut: (action, key) => set((state) => {
     const normalized = key.toLowerCase(); const shortcuts = { ...state.shortcuts }; const duplicate = (Object.keys(shortcuts) as ShortcutAction[]).find((candidate) => candidate !== action && shortcuts[candidate] === normalized);
     if (duplicate) shortcuts[duplicate] = shortcuts[action]; shortcuts[action] = normalized;

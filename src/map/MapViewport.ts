@@ -1,5 +1,5 @@
 import { Application } from "pixi.js";
-import type { BuildingMode, EditorTool, KeyboardShortcuts, LayerVisibility, RoadShape } from "../app/store/editorStore";
+import type { BuildingMode, EditorTool, KeyboardShortcuts, LayerVisibility, RoadShape, TransitMode } from "../app/store/editorStore";
 import type { Editor } from "../editor/Editor";
 import { continuationRoad } from "../editor/RoadGraph";
 import { roadIdentityGroupEdges, roadIdentityTerminalNodeIds, roadNameAtNode, selectedRoadEdge } from "../editor/RoadIdentity";
@@ -10,8 +10,9 @@ import { buildRoadFillFaces, findRoadFillPolygon, type RoadFillFace } from "../g
 import { pointInPolygon } from "../geometry/Polygon";
 import { nearestPointOnSegment } from "../geometry/Segment";
 import { nearestZoneSegment } from "../geometry/ZoneGeometry";
+import { busPathDistance, busStopGeometry, locatePointOnRoad } from "../geometry/BusGeometry";
 import type { Point } from "../geometry/Point";
-import { defaultFacilityColor, type Building, type BuildingStyle, type BuildingType, type FacilityPOI, type RoadCategory, type RoadGeometry, type RoadStructure, type RoadSubtype, type ZoneType } from "../model/City";
+import { defaultFacilityColor, type Building, type BuildingStyle, type BuildingType, type BusPathStep, type BusStop, type FacilityPOI, type RoadCategory, type RoadGeometry, type RoadStructure, type RoadSubtype, type ZoneType } from "../model/City";
 import { isFacilityPlacementValid } from "../model/FacilityPlacement";
 import { createBuildingPreset, dragFootprintEdge, extrudeFootprintEdge, footprintContainsPoint, footprintEdgeOutwardNormal, isValidBuildingFootprint, nearestFootprintEdge, translateFootprint, type BuildingPreset, type FootprintEdge } from "../geometry/BuildingGeometry";
 import { MapCamera } from "./MapCamera";
@@ -24,12 +25,14 @@ export interface BuildingContextMenu { x: number; y: number; buildingId: string;
 export interface RoadToolSettings { mode: "straight" | "curve"; shape: RoadShape; subtype: RoadSubtype; width: number; structure: RoadStructure; align: boolean; angleEnabled: boolean; angle: number; gridSnap: boolean; gridSize: number; polygonSides: number; parallelOffset: number }
 export interface ZoneToolSettings { mode: "custom" | "road-fill" | "edit"; type: ZoneType; color: string; icon: string; iconColor: string; iconOpacity: number; layerOpacity: number }
 export interface BuildingToolSettings { mode: BuildingMode; preset: BuildingPreset; type: BuildingType; subtype: string; style: BuildingStyle; floors: number; height: number; width: number; depth: number; snapToRoad: boolean; setback: number; extrude: boolean }
+export interface BusToolSettings { mode: TransitMode; lineColor: string }
 interface MapViewportOptions {
   layers: LayerVisibility;
   tool: EditorTool;
   road: RoadToolSettings;
   zone: ZoneToolSettings;
   building: BuildingToolSettings;
+  bus: BusToolSettings;
   shortcuts: KeyboardShortcuts;
   inputEnabled: boolean;
   onZoomChange?: (percent: number, pixelsPerMeter: number) => void;
@@ -42,7 +45,7 @@ interface MapViewportOptions {
   onRoadMeasurement?: (measurement?: { x: number; y: number; text: string }) => void;
 }
 
-type Gesture = "pan" | "rotate" | "node" | "road" | "zone" | "zone-vertex" | "building" | "building-vertex" | "building-edge" | "facility" | null;
+type Gesture = "pan" | "rotate" | "node" | "road" | "zone" | "zone-vertex" | "building" | "building-vertex" | "building-edge" | "facility" | "bus-terminal" | "bus-stop" | null;
 
 export class MapViewport {
   private readonly app = new Application();
@@ -65,6 +68,8 @@ export class MapViewport {
   private draggedZone?: { id: string; beforePolygon: Point[]; vertexIndex?: number };
   private draggedBuilding?: { id: string; beforeFootprint: Building["footprint"]; startWorld: Point; vertex?: { ringIndex: number; vertexIndex: number }; edge?: FootprintEdge };
   private draggedFacility?: { id: string; beforePosition: Point; pointerOffset: Point };
+  private draggedBusTerminal?: { id: string; beforePosition: Point };
+  private draggedBusStop?: { id: string; before: Pick<BusStop, "roadEdgeId" | "fraction" | "position" | "side"> };
   private roadStart?: { point: Point; nodeId?: string; name?: string; roadId?: string };
   private curveMidpoint?: Point;
   private shapeCenter?: Point;
@@ -73,6 +78,8 @@ export class MapViewport {
   private roadFillFaces?: RoadFillFace[];
   private hoveredRoadFill?: Point[];
   private buildingDraft: Point[] = [];
+  private busDraft?: { startTerminalId: string; path: BusPathStep[]; currentNodeId?: string; editingLineId?: string };
+  private activeBusLineId?: string;
   private disposed = false;
   private initialized = false;
   private northAnimation = 0;
@@ -87,26 +94,28 @@ export class MapViewport {
     this.canvas = this.app.canvas; this.canvas.className = "citygraph-canvas"; this.canvas.style.touchAction = "none"; this.host.appendChild(this.canvas);
     this.renderer = new MapRenderer(this.editor.state.city, this.options.layers); this.renderer.setZoningOpacity(this.options.zone.layerOpacity); this.renderer.setZoneEditable(this.options.tool === "zones" && this.options.zone.mode === "edit", this.editor.selection); this.renderer.setBuildingEditable(this.options.tool === "buildings" && this.options.building.mode === "edit", this.editor.selection, this.camera.zoom); this.app.stage.addChild(this.renderer.world); this.fitCity(); this.bindInput();
     this.unsubscribeEditor = this.editor.subscribe((change) => {
-      if (change === "city") { this.cancelRoad(); this.cancelZone(); this.cancelBuilding(); this.roadFillFaces = undefined; this.renderer?.replaceCity(this.editor.state.city); this.renderer?.setZoningOpacity(this.options.zone.layerOpacity); this.renderer?.setZoneEditable(this.options.tool === "zones" && this.options.zone.mode === "edit", this.editor.selection); this.renderer?.setBuildingEditable(this.options.tool === "buildings" && this.options.building.mode === "edit", this.editor.selection, this.camera.zoom); this.fitCity(); }
-      else if (change === "roads") { this.roadFillFaces = undefined; this.renderer?.refreshRoads(this.editor.selection); }
+      if (change === "city") { this.cancelRoad(); this.cancelZone(); this.cancelBuilding(); this.cancelBus(); this.roadFillFaces = undefined; this.renderer?.replaceCity(this.editor.state.city); this.renderer?.setZoningOpacity(this.options.zone.layerOpacity); this.renderer?.setZoneEditable(this.options.tool === "zones" && this.options.zone.mode === "edit", this.editor.selection); this.renderer?.setBuildingEditable(this.options.tool === "buildings" && this.options.building.mode === "edit", this.editor.selection, this.camera.zoom); this.fitCity(); }
+      else if (change === "roads") { this.roadFillFaces = undefined; this.renderer?.refreshRoads(this.editor.selection); this.renderer?.refreshTransit(this.editor.selection, this.camera.zoom, this.camera.rotation); }
       else if (change === "zones") this.renderer?.refreshZones(this.editor.selection);
       else if (change === "buildings") this.renderer?.refreshBuildings(this.editor.selection);
-      else if (change === "selection") { this.renderer?.refreshRoads(this.editor.selection); this.renderer?.refreshZones(this.editor.selection); this.renderer?.refreshBuildings(this.editor.selection); }
+      else if (change === "buses") { if (this.activeBusLineId && !this.editor.state.city.busLines.some((line) => line.id === this.activeBusLineId)) this.activeBusLineId = undefined; this.renderer?.refreshTransit(this.editor.selection, this.camera.zoom, this.camera.rotation); }
+      else if (change === "selection") { if (this.editor.selection?.kind === "bus-line") this.activeBusLineId = this.editor.selection.id; else if (this.activeBusLineId && !this.editor.state.city.busLines.some((line) => line.id === this.activeBusLineId)) this.activeBusLineId = undefined; this.renderer?.refreshRoads(this.editor.selection); this.renderer?.refreshZones(this.editor.selection); this.renderer?.refreshBuildings(this.editor.selection); this.renderer?.refreshTransit(this.editor.selection, this.camera.zoom, this.camera.rotation); }
     });
     this.resizeObserver = new ResizeObserver((entries) => { const entry = entries[0]; if (entry) this.resize(entry.contentRect.width, entry.contentRect.height); });
     this.resizeObserver.observe(this.host);
   }
 
   public setLayerVisibility(layers: LayerVisibility): void { this.options = { ...this.options, layers }; this.renderer?.setVisibility(layers); }
-  public setTool(tool: EditorTool): void { this.options = { ...this.options, tool }; this.options.onRoadContextMenu?.(); this.options.onZoneContextMenu?.(); this.options.onBuildingContextMenu?.(); this.renderer?.setZoneEditable(tool === "zones" && this.options.zone.mode === "edit", this.editor.selection); this.renderer?.setBuildingEditable(tool === "buildings" && this.options.building.mode === "edit", this.editor.selection, this.camera.zoom); if (tool !== "roads") this.cancelRoad(); if (tool !== "zones") this.cancelZone(); if (tool !== "buildings") this.cancelBuilding(); }
+  public setTool(tool: EditorTool): void { this.options = { ...this.options, tool }; this.options.onRoadContextMenu?.(); this.options.onZoneContextMenu?.(); this.options.onBuildingContextMenu?.(); this.renderer?.setZoneEditable(tool === "zones" && this.options.zone.mode === "edit", this.editor.selection); this.renderer?.setBuildingEditable(tool === "buildings" && this.options.building.mode === "edit", this.editor.selection, this.camera.zoom); if (tool !== "roads") this.cancelRoad(); if (tool !== "zones") this.cancelZone(); if (tool !== "buildings") this.cancelBuilding(); if (tool !== "transit") this.cancelBus(); else if (this.options.bus.mode === "line" && this.editor.selection?.kind === "bus-line") this.beginBusLineDraft(this.editor.selection.id); }
   public setRoadSettings(road: RoadToolSettings): void {
     const previous = this.options.road; const identityChanged = road.shape !== previous.shape || road.mode !== previous.mode || road.subtype !== previous.subtype || road.width !== previous.width || road.structure !== previous.structure;
     this.options = { ...this.options, road }; if (identityChanged) this.cancelRoad(); else this.updatePreview(this.previousPointer);
   }
   public setZoneSettings(zone: ZoneToolSettings): void { const modeChanged = zone.mode !== this.options.zone.mode; this.options = { ...this.options, zone }; this.renderer?.setZoningOpacity(zone.layerOpacity); this.renderer?.setZoneEditable(this.options.tool === "zones" && zone.mode === "edit", this.editor.selection); if (modeChanged) this.cancelZone(); else this.updateZonePreview(this.previousPointer); }
   public setBuildingSettings(building: BuildingToolSettings): void { const modeChanged = building.mode !== this.options.building.mode; this.options = { ...this.options, building }; this.renderer?.setBuildingEditable(this.options.tool === "buildings" && building.mode === "edit", this.editor.selection, this.camera.zoom); if (modeChanged) this.cancelBuilding(); else if (this.options.tool === "buildings" && building.mode !== "edit") this.updateBuildingPreview(this.previousPointer); else if (this.options.tool !== "buildings") this.renderer?.setBuildingPreview(); }
+  public setBusSettings(bus: BusToolSettings): void { const modeChanged = bus.mode !== this.options.bus.mode; this.options = { ...this.options, bus }; if (!modeChanged) { if (this.busDraft) this.renderer?.setTransitPathPreview(this.busDraft.path, bus.lineColor); return; } this.cancelBus(); if (this.options.tool !== "transit") return; if (bus.mode === "line" && this.editor.selection?.kind === "bus-line") this.beginBusLineDraft(this.editor.selection.id); if (bus.mode === "stop" && this.editor.selection?.kind === "bus-line") this.activeBusLineId = this.editor.selection.id; }
   public setShortcuts(shortcuts: KeyboardShortcuts): void { this.options = { ...this.options, shortcuts }; }
-  public setInputEnabled(inputEnabled: boolean): void { this.options = { ...this.options, inputEnabled }; if (!inputEnabled) { this.cancelRoad(); this.cancelZone(); this.cancelBuilding(); } }
+  public setInputEnabled(inputEnabled: boolean): void { this.options = { ...this.options, inputEnabled }; if (!inputEnabled) { this.cancelRoad(); this.cancelZone(); this.cancelBuilding(); this.cancelBus(); } }
   public zoomIn(): void { this.zoomBy(1.22); }
   public zoomOut(): void { this.zoomBy(1 / 1.22); }
   public resetView(): void { this.fitCity(); }
@@ -176,6 +185,18 @@ export class MapViewport {
     const screen = this.eventPoint(event); this.previousPointer = screen; this.pointerId = event.pointerId; this.canvas?.setPointerCapture(event.pointerId);
     if (event.button === 1) { event.preventDefault(); this.gesture = "rotate"; this.canvas?.classList.add("is-rotating"); return; }
     if (this.options.tool === "roads") { this.pointerId = null; this.handleRoadClick(screen); return; }
+    if (this.options.tool === "transit") {
+      if (this.options.bus.mode === "terminal") {
+        const terminal = this.pickBusTerminal(screen); if (terminal) { this.editor.select({ kind: "bus-terminal", id: terminal.id }); this.draggedBusTerminal = { id: terminal.id, beforePosition: { ...terminal.position } }; this.gesture = "bus-terminal"; this.canvas?.classList.add("is-moving-bus"); return; }
+        this.editor.createBusTerminal({ name: `Bus Terminal ${(this.editor.state.city.busTerminals?.length ?? 0) + 1}`, position: this.busTerminalPosition(screen) }); this.pointerId = null; return;
+      }
+      if (this.options.bus.mode === "line") { this.pointerId = null; this.handleBusLineClick(screen); return; }
+      if (this.options.bus.mode === "stop") { this.pointerId = null; this.handleBusStopClick(screen); return; }
+      const stop = this.pickBusStop(screen); if (stop) { this.editor.select({ kind: "bus-stop", id: stop.id }); this.activeBusLineId = stop.lineId; this.draggedBusStop = { id: stop.id, before: { roadEdgeId: stop.roadEdgeId, fraction: stop.fraction, position: { ...stop.position }, side: stop.side } }; this.gesture = "bus-stop"; this.canvas?.classList.add("is-moving-bus"); return; }
+      const terminal = this.pickBusTerminal(screen); if (terminal) { this.editor.select({ kind: "bus-terminal", id: terminal.id }); this.draggedBusTerminal = { id: terminal.id, beforePosition: { ...terminal.position } }; this.gesture = "bus-terminal"; this.canvas?.classList.add("is-moving-bus"); return; }
+      const line = this.pickBusLine(screen); if (line) { this.activeBusLineId = line.id; this.editor.select({ kind: "bus-line", id: line.id }); this.pointerId = null; return; }
+      this.editor.select(null); this.gesture = "pan"; this.canvas?.classList.add("is-panning"); return;
+    }
     if (this.options.tool === "zones" && this.options.zone.mode !== "edit") { this.pointerId = null; this.handleZoneClick(screen, event.detail >= 2); return; }
     if (this.options.tool === "buildings" && this.options.building.mode !== "edit") { this.pointerId = null; this.handleBuildingClick(screen, event.detail >= 2); return; }
     if (this.options.tool === "zones" && this.options.zone.mode === "edit") {
@@ -195,6 +216,9 @@ export class MapViewport {
       if (this.options.tool === "public") { this.editor.select(null); this.gesture = "pan"; this.canvas?.classList.add("is-panning"); return; }
     }
     if (this.options.tool === "select") {
+      const busStop = this.pickBusStop(screen); if (busStop) { this.editor.select({ kind: "bus-stop", id: busStop.id }); this.pointerId = null; return; }
+      const busTerminal = this.pickBusTerminal(screen); if (busTerminal) { this.editor.select({ kind: "bus-terminal", id: busTerminal.id }); this.pointerId = null; return; }
+      const busLine = this.pickBusLine(screen); if (busLine) { this.editor.select({ kind: "bus-line", id: busLine.id }); this.pointerId = null; return; }
       const node = this.pickEditableNode(screen, 12);
       if (node) { this.editor.select({ kind: "node", id: node.id }); this.draggedNode = { id: node.id, before: { x: node.x, y: node.y } }; this.gesture = "node"; return; }
       const road = this.pickRoad(screen);
@@ -246,6 +270,14 @@ export class MapViewport {
       const facility = this.editor.state.city.facilities.find((candidate) => candidate.id === this.draggedFacility?.id);
       if (facility) { const pointer = this.camera.screenToMap(current); facility.position = { x: pointer.x + this.draggedFacility.pointerOffset.x, y: pointer.y + this.draggedFacility.pointerOffset.y }; }
     }
+    else if (this.gesture === "bus-terminal" && this.draggedBusTerminal) {
+      const terminal = this.editor.state.city.busTerminals?.find((candidate) => candidate.id === this.draggedBusTerminal?.id);
+      if (terminal) { terminal.position = this.busTerminalPosition(current); this.renderer?.refreshTransit(this.editor.selection, this.camera.zoom, this.camera.rotation); }
+    }
+    else if (this.gesture === "bus-stop" && this.draggedBusStop) {
+      const stop = this.editor.state.city.busStops?.find((candidate) => candidate.id === this.draggedBusStop?.id); const placement = stop ? this.busStopPlacement(stop.lineId, current) : undefined;
+      if (stop && placement) { Object.assign(stop, placement); this.renderer?.refreshTransit(this.editor.selection, this.camera.zoom, this.camera.rotation); }
+    }
     this.previousPointer = current; this.applyCamera();
   };
   private handlePointerUp = (event: PointerEvent): void => {
@@ -262,13 +294,16 @@ export class MapViewport {
       if (facility && isFacilityPlacementValid(this.editor.state.city.buildings, facility.position)) { this.options.onValidation?.(); this.editor.moveFacility(this.draggedFacility.id, this.draggedFacility.beforePosition); }
       else if (facility) { facility.position = { ...this.draggedFacility.beforePosition }; this.options.onValidation?.("facility.invalid.building"); this.editor.select({ kind: "facility", id: facility.id }); }
     }
+    else if (this.gesture === "bus-terminal" && this.draggedBusTerminal) this.editor.moveBusTerminal(this.draggedBusTerminal.id, this.draggedBusTerminal.beforePosition);
+    else if (this.gesture === "bus-stop" && this.draggedBusStop) this.editor.moveBusStop(this.draggedBusStop.id, this.draggedBusStop.before);
     this.renderer?.setNodeSnapTarget();
-    this.draggedNode = undefined; this.draggedRoad = undefined; this.draggedZone = undefined; this.draggedBuilding = undefined; this.draggedFacility = undefined; this.renderer?.setBuildingEdge(undefined, this.editor.selection); this.gesture = null; this.pointerId = null; if (this.canvas?.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
-    this.canvas?.classList.remove("is-panning", "is-rotating", "is-moving-road", "is-moving-zone", "is-moving-building", "is-moving-facility");
+    this.draggedNode = undefined; this.draggedRoad = undefined; this.draggedZone = undefined; this.draggedBuilding = undefined; this.draggedFacility = undefined; this.draggedBusTerminal = undefined; this.draggedBusStop = undefined; this.renderer?.setBuildingEdge(undefined, this.editor.selection); this.gesture = null; this.pointerId = null; if (this.canvas?.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId);
+    this.canvas?.classList.remove("is-panning", "is-rotating", "is-moving-road", "is-moving-zone", "is-moving-building", "is-moving-facility", "is-moving-bus");
   };
   private handleWheel = (event: WheelEvent): void => { if (!this.options.inputEnabled) return; event.preventDefault(); this.zoomBy(Math.exp(-event.deltaY * 0.0014), this.eventPoint(event)); };
   private handleContextMenu = (event: MouseEvent): void => {
     if (this.options.tool === "roads") { event.preventDefault(); this.cancelRoad(); return; }
+    if (this.options.tool === "transit" && this.options.bus.mode === "line") { event.preventDefault(); this.cancelBus(); return; }
     if (this.options.tool === "zones" && this.options.zone.mode !== "edit") { event.preventDefault(); this.cancelZone(); return; }
     if (this.options.tool === "buildings" && this.options.building.mode !== "edit") { event.preventDefault(); this.cancelBuilding(); return; }
     if (this.options.tool !== "select" && !(this.options.tool === "zones" && this.options.zone.mode === "edit") && !(this.options.tool === "buildings" && this.options.building.mode === "edit")) return;
@@ -284,11 +319,11 @@ export class MapViewport {
     if (!this.options.inputEnabled) return;
     const target = event.target;
     if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable)) return;
-    if (event.key === "Escape") { this.cancelRoad(); this.cancelZone(); this.cancelBuilding(); }
+    if (event.key === "Escape") { this.cancelRoad(); this.cancelZone(); this.cancelBuilding(); this.cancelBus(); }
     else if (event.key === "Enter" && this.options.tool === "zones" && this.options.zone.mode === "custom") this.finishZone();
     else if (event.key === "Enter" && this.options.tool === "buildings" && this.options.building.mode === "free") this.finishBuilding();
-    else if (event.key === "Delete" || event.key === "Backspace") { if ((this.options.tool === "select" && this.editor.selection?.kind !== "zone") || (this.options.tool === "public" && this.editor.selection?.kind === "facility") || (this.options.tool === "zones" && this.options.zone.mode === "edit") || (this.options.tool === "buildings" && this.options.building.mode === "edit")) this.editor.deleteSelected(); }
-    else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") { event.preventDefault(); this.cancelRoad(); this.cancelZone(); this.cancelBuilding(); if (event.shiftKey) this.editor.redo(); else this.editor.undo(); }
+    else if (event.key === "Delete" || event.key === "Backspace") { if ((this.options.tool === "select" && this.editor.selection?.kind !== "zone") || (this.options.tool === "public" && this.editor.selection?.kind === "facility") || (this.options.tool === "zones" && this.options.zone.mode === "edit") || (this.options.tool === "buildings" && this.options.building.mode === "edit") || (this.options.tool === "transit" && this.options.bus.mode === "edit")) this.editor.deleteSelected(); }
+    else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") { event.preventDefault(); this.cancelRoad(); this.cancelZone(); this.cancelBuilding(); this.cancelBus(); if (event.shiftKey) this.editor.redo(); else this.editor.undo(); }
     else if (!event.ctrlKey && !event.metaKey && !event.altKey) {
       const key = event.key.toLowerCase(); const shortcuts = this.options.shortcuts; const center = { x: this.viewportWidth / 2, y: this.viewportHeight / 2 };
       if (key === shortcuts.panUp) this.camera.panBy(0, 42);
@@ -301,6 +336,51 @@ export class MapViewport {
       event.preventDefault(); this.applyCamera();
     }
   };
+
+  private beginBusLineDraft(lineId: string): void {
+    const line = this.editor.state.city.busLines?.find((candidate) => candidate.id === lineId); if (!line) return;
+    this.activeBusLineId = line.id; this.busDraft = { startTerminalId: line.startTerminalId, path: [], editingLineId: line.id }; this.renderer?.setTransitPathPreview();
+  }
+  private handleBusLineClick(screen: Point): void {
+    const city = this.editor.state.city;
+    if (!this.busDraft) {
+      const terminal = this.pickBusTerminal(screen); if (terminal) { this.editor.select({ kind: "bus-terminal", id: terminal.id }); this.busDraft = { startTerminalId: terminal.id, path: [] }; return; }
+      const line = this.pickBusLine(screen); if (line) { this.editor.select({ kind: "bus-line", id: line.id }); this.beginBusLineDraft(line.id); }
+      return;
+    }
+    const endTerminal = this.pickBusTerminal(screen);
+    if (endTerminal && this.busDraft.path.length > 0) { this.finishBusLine(endTerminal.id); return; }
+    const edge = this.pickBusRoad(screen); if (!edge) return;
+    let forward: boolean; let currentNodeId: string;
+    if (!this.busDraft.currentNodeId) {
+      const start = city.busTerminals?.find((terminal) => terminal.id === this.busDraft?.startTerminalId); const startNode = city.roadNodes.find((node) => node.id === edge.startNodeId); const endNode = city.roadNodes.find((node) => node.id === edge.endNodeId); if (!start || !startNode || !endNode) return; const nearestStart = distance(start.position, startNode) <= distance(start.position, endNode) ? startNode : endNode; if (distance(start.position, nearestStart) > 1e-4) return;
+      forward = nearestStart.id === edge.startNodeId; currentNodeId = forward ? edge.endNodeId : edge.startNodeId;
+    } else if (edge.startNodeId === this.busDraft.currentNodeId) { forward = true; currentNodeId = edge.endNodeId; }
+    else if (edge.endNodeId === this.busDraft.currentNodeId) { forward = false; currentNodeId = edge.startNodeId; }
+    else return;
+    this.busDraft.path.push({ roadEdgeId: edge.id, forward }); this.busDraft.currentNodeId = currentNodeId; this.renderer?.setTransitPathPreview(this.busDraft.path, this.options.bus.lineColor);
+  }
+  private finishBusLine(endTerminalId: string): void {
+    const draft = this.busDraft; if (!draft || draft.path.length === 0 || !draft.currentNodeId) return; const terminal = this.editor.state.city.busTerminals.find((candidate) => candidate.id === endTerminalId); const node = this.editor.state.city.roadNodes.find((candidate) => candidate.id === draft.currentNodeId); if (!terminal || !node || distance(terminal.position, node) > 1e-4) return;
+    if (draft.editingLineId) this.editor.updateBusLinePath(draft.editingLineId, { path: draft.path, endTerminalId, color: this.options.bus.lineColor });
+    else { const id = this.editor.createBusLine({ name: `Bus Line ${(this.editor.state.city.busLines?.length ?? 0) + 1}`, color: this.options.bus.lineColor, startTerminalId: draft.startTerminalId, endTerminalId, path: draft.path, direction: "start-to-end" }); if (id) this.activeBusLineId = id; }
+    this.busDraft = undefined; this.renderer?.setTransitPathPreview();
+  }
+  private handleBusStopClick(screen: Point): void {
+    const existing = this.pickBusStop(screen); if (existing) { this.activeBusLineId = existing.lineId; this.editor.select({ kind: "bus-stop", id: existing.id }); return; }
+    let lineId = this.activeBusLineId && this.editor.state.city.busLines.some((line) => line.id === this.activeBusLineId) ? this.activeBusLineId : this.editor.selection?.kind === "bus-line" ? this.editor.selection.id : undefined;
+    if (!lineId) { const line = this.pickBusLine(screen); if (!line) return; lineId = line.id; this.activeBusLineId = line.id; this.editor.select({ kind: "bus-line", id: line.id }); return; }
+    const placement = this.busStopPlacement(lineId, screen); if (!placement) return;
+    this.editor.createBusStop({ name: `Bus Stop ${(this.editor.state.city.busStops?.length ?? 0) + 1}`, lineId, ...placement });
+  }
+  private busStopPlacement(lineId: string, screen: Point): Pick<BusStop, "roadEdgeId" | "fraction" | "position" | "side"> | undefined {
+    const city = this.editor.state.city; const line = city.busLines?.find((candidate) => candidate.id === lineId); if (!line) return undefined;
+    const world = this.camera.screenToMap(screen); const nodes = new Map(city.roadNodes.map((node) => [node.id, node])); const edges = new Map(city.roadEdges.map((edge) => [edge.id, edge])); const roads = new Map(city.roads.map((road) => [road.id, road])); let best: { edgeId: string; point: Point; tangent: Point; fraction: number; distance: number; limit: number } | undefined;
+    for (const step of line.path) { const edge = edges.get(step.roadEdgeId); if (!edge) continue; const located = locatePointOnRoad(world, edge, nodes); const road = roads.get(edge.roadId); if (!located || !road) continue; const candidate = { edgeId: edge.id, point: located.point, tangent: located.tangent, fraction: located.fraction, distance: located.distance, limit: road.width / 2 + 18 / this.camera.zoom }; if ((!best || candidate.distance < best.distance) && candidate.distance <= candidate.limit) best = candidate; }
+    if (!best) return undefined; const cross = best.tangent.x * (world.y - best.point.y) - best.tangent.y * (world.x - best.point.x); return { roadEdgeId: best.edgeId, fraction: best.fraction, position: { ...best.point }, side: cross >= 0 ? "left" : "right" };
+  }
+  private cancelBus(): void { this.busDraft = undefined; this.activeBusLineId = undefined; this.renderer?.setTransitPathPreview(); }
+  private busTerminalPosition(screen: Point): Point { const nearest = this.editor.state.city.roadNodes.map((node) => ({ node, distance: distance(this.camera.mapToScreen(node), screen) })).filter((candidate) => candidate.distance <= 24).sort((a, b) => a.distance - b.distance)[0]?.node; return nearest ? { x: nearest.x, y: nearest.y } : this.camera.screenToMap(screen); }
 
   private handleRoadClick(screen: Point): void {
     if (this.options.road.shape === "parallel") { this.handleParallelClick(screen); return; }
@@ -489,6 +569,13 @@ export class MapViewport {
     const world = this.camera.screenToMap(screen); const nodes = new Map(this.editor.state.city.roadNodes.map((node) => [node.id, node])); const roads = new Map(this.editor.state.city.roads.map((road) => [road.id, road])); const priority: Record<RoadStructure, number> = { tunnel: 0, ground: 1, elevated: 2 };
     return this.editor.state.city.roadEdges.map((edge) => ({ edge, road: roads.get(edge.roadId), distance: roadDistance(world, edge, nodes) })).filter((hit) => hit.road && hit.distance <= hit.road.width / 2 + 8 / this.camera.zoom).sort((a, b) => priority[b.edge.structure] - priority[a.edge.structure] || a.distance - b.distance)[0]?.edge;
   }
+  private pickBusRoad(screen: Point) {
+    const city = this.editor.state.city; const world = this.camera.screenToMap(screen); const nodes = new Map(city.roadNodes.map((node) => [node.id, node])); const roads = new Map(city.roads.map((road) => [road.id, road]));
+    return city.roadEdges.map((edge) => ({ edge, road: roads.get(edge.roadId), distance: roadDistance(world, edge, nodes) })).filter((hit) => hit.road && hit.distance <= hit.road.width / 2 + 10 / this.camera.zoom).sort((a, b) => a.distance - b.distance)[0]?.edge;
+  }
+  private pickBusTerminal(screen: Point) { if (!this.options.layers.transit) return undefined; return [...(this.editor.state.city.busTerminals ?? [])].reverse().find((terminal) => distance(this.camera.mapToScreen(terminal.position), screen) <= 19); }
+  private pickBusStop(screen: Point) { if (!this.options.layers.transit) return undefined; const city = this.editor.state.city; return [...(city.busStops ?? [])].reverse().find((stop) => distance(this.camera.mapToScreen(busStopGeometry(city, stop).stopPoint), screen) <= 18); }
+  private pickBusLine(screen: Point) { if (!this.options.layers.transit) return undefined; const city = this.editor.state.city; const world = this.camera.screenToMap(screen); return [...(city.busLines ?? [])].reverse().map((line) => ({ line, distance: busPathDistance(world, city, line) })).filter((candidate) => candidate.distance <= 10 / this.camera.zoom).sort((a, b) => a.distance - b.distance)[0]?.line; }
   private pickZone(screen: Point) { if (!this.options.layers.zoning) return undefined; const world = this.camera.screenToMap(screen); return [...this.editor.state.city.zones].reverse().find((zone) => pointInPolygon(world, zone.polygon)); }
   private pickBuilding(screen: Point) { if (!this.options.layers.buildings) return undefined; const world = this.camera.screenToMap(screen); return [...this.editor.state.city.buildings].reverse().find((building) => footprintContainsPoint(building.footprint, world)); }
   private pickFacility(screen: Point): FacilityPOI | undefined { if (!this.options.layers.facilities) return undefined; return [...this.editor.state.city.facilities].reverse().find((facility) => distance(this.camera.mapToScreen(facility.position), screen) <= 18); }

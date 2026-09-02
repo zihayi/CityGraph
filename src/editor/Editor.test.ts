@@ -12,7 +12,7 @@ function city(): City {
       { id: "new", category: "normal", subtype: "small", width: 8, name: "New", segmentIds: ["new-edge"] },
     ],
     roadEdges: [{ id: "old-edge", roadId: "old", name: "Old", startNodeId: "a", endNodeId: "b", structure: "ground", level: 0, geometry: { type: "line" } }, { id: "new-edge", roadId: "new", name: "New", startNodeId: "c", endNodeId: "d", structure: "ground", level: 0, geometry: { type: "line" } }],
-    buildings: [], blocks: [], zones: [], parks: [], waters: [], pois: [], facilities: [], transitLines: [], transitStations: [], labels: [],
+    buildings: [], blocks: [], zones: [], parks: [], waters: [], pois: [], facilities: [], transitLines: [], transitStations: [], busTerminals: [], busLines: [], busStops: [], labels: [],
   };
 }
 
@@ -97,5 +97,49 @@ describe("Editor road endpoint merging", () => {
     expect(editor.selection).toEqual({ kind: "facility", id }); editor.updateFacility(id, { name: "Manner Coffee", color: "#b84a62" }); expect(editor.state.city.facilities[0]).toMatchObject({ type: "coffee-shop", name: "Manner Coffee", icon: "coffee-shop.svg", color: "#b84a62" });
     editor.state.city.facilities[0]!.position = { x: 80, y: 90 }; editor.moveFacility(id, { x: 20, y: 30 }); expect(editor.state.city.facilities[0]!.position).toEqual({ x: 80, y: 90 }); editor.undo(); expect(editor.state.city.facilities[0]!.position).toEqual({ x: 20, y: 30 }); editor.redo();
     editor.deleteSelected(); expect(editor.state.city.facilities).toHaveLength(0); editor.undo(); expect(editor.state.city.facilities[0]?.name).toBe("Manner Coffee"); editor.undo(); expect(editor.state.city.facilities[0]?.position).toEqual({ x: 20, y: 30 }); editor.undo(); expect(editor.state.city.facilities[0]).toMatchObject({ name: "Coffee Shop", color: "#2d9f9b" }); editor.undo(); expect(editor.state.city.facilities).toHaveLength(0); editor.redo(); expect(editor.state.city.facilities[0]?.type).toBe("coffee-shop");
+  });
+
+  it("creates, moves, renames and deletes bus terminals with undo and redo", () => {
+    const editor = new Editor(city()); const id = editor.createBusTerminal({ name: "West Terminal", position: { x: 10, y: 20 } }); expect(editor.selection).toEqual({ kind: "bus-terminal", id });
+    editor.state.city.busTerminals![0]!.position = { x: 40, y: 60 }; editor.moveBusTerminal(id, { x: 10, y: 20 }); editor.updateBusTerminal(id, { name: "West Exchange" }); expect(editor.state.city.busTerminals![0]).toMatchObject({ name: "West Exchange", position: { x: 40, y: 60 } });
+    editor.deleteSelected(); expect(editor.state.city.busTerminals).toEqual([]); editor.undo(); expect(editor.state.city.busTerminals![0]?.name).toBe("West Exchange"); editor.undo(); expect(editor.state.city.busTerminals![0]?.name).toBe("West Terminal"); editor.undo(); expect(editor.state.city.busTerminals![0]?.position).toEqual({ x: 10, y: 20 }); editor.redo(); expect(editor.state.city.busTerminals![0]?.position).toEqual({ x: 40, y: 60 });
+  });
+
+  it("updates bus lines and stops atomically while pruning stops outside a changed path", () => {
+    const editor = new Editor(city()); editor.state.city.roadEdges.find((edge) => edge.id === "new-edge")!.startNodeId = "b"; const west = editor.createBusTerminal({ name: "West", position: { x: 0, y: 0 } }); const east = editor.createBusTerminal({ name: "East", position: { x: 220, y: 80 } }); const north = editor.createBusTerminal({ name: "North", position: { x: 100, y: 0 } });
+    const lineId = editor.createBusLine({ name: "B1", color: "#3366cc", startTerminalId: west, endTerminalId: east, path: [{ roadEdgeId: "old-edge", forward: true }, { roadEdgeId: "new-edge", forward: true }], direction: "start-to-end" })!; editor.updateBusLine(lineId, { name: "B1 Crosstown", color: "#cc3333" }); expect(editor.state.city.busLines![0]).toMatchObject({ name: "B1 Crosstown", color: "#cc3333" });
+    const keptStop = editor.createBusStop({ name: "Market", lineId, roadEdgeId: "old-edge", fraction: 0.25, position: { x: 25, y: 0 }, side: "left" })!; const prunedStop = editor.createBusStop({ name: "Park", lineId, roadEdgeId: "new-edge", fraction: 0.5, position: { x: 165, y: 80 }, side: "right" })!;
+    editor.updateBusStop(keptStop, { name: "Central Market", fraction: 0.3, side: "right" }); const beforeMove = { roadEdgeId: "old-edge", fraction: 0.3, position: { x: 25, y: 0 }, side: "right" as const }; const stop = editor.state.city.busStops!.find((candidate) => candidate.id === keptStop)!; stop.fraction = 0.4; stop.position = { x: 40, y: 0 }; editor.moveBusStop(keptStop, beforeMove); expect(stop).toMatchObject({ name: "Central Market", fraction: 0.4, position: { x: 40, y: 0 }, side: "right" });
+    editor.select({ kind: "bus-stop", id: prunedStop }); editor.updateBusLinePath(lineId, [{ roadEdgeId: "old-edge", forward: true }], north); expect(editor.state.city.busLines![0]).toMatchObject({ endTerminalId: north, path: [{ roadEdgeId: "old-edge", forward: true }], stopIds: [keptStop] }); expect(editor.state.city.busStops!.map((candidate) => candidate.id)).toEqual([keptStop]); expect(editor.selection).toBeNull();
+    editor.undo(); expect(editor.state.city.busLines![0]).toMatchObject({ endTerminalId: east, stopIds: [keptStop, prunedStop] }); expect(editor.state.city.busStops!.map((candidate) => candidate.id)).toEqual([keptStop, prunedStop]); editor.redo(); expect(editor.state.city.busStops).toHaveLength(1);
+  });
+
+  it("maintains stop ids and cascades bus line and terminal deletion", () => {
+    const editor = new Editor(city()); const start = editor.createBusTerminal({ name: "Start", position: { x: 0, y: 0 } }); const end = editor.createBusTerminal({ name: "End", position: { x: 100, y: 0 } }); const lineId = editor.createBusLine({ name: "B2", color: "#228855", startTerminalId: start, endTerminalId: end, path: [{ roadEdgeId: "old-edge", forward: true }], direction: "start-to-end" })!; const stopId = editor.createBusStop({ name: "First", lineId, roadEdgeId: "old-edge", fraction: 0.5, position: { x: 50, y: 0 }, side: "left" })!;
+    editor.deleteSelected(); expect(editor.state.city.busStops).toEqual([]); expect(editor.state.city.busLines![0]?.stopIds).toEqual([]); editor.undo(); expect(editor.state.city.busLines![0]?.stopIds).toEqual([stopId]); editor.redo(); editor.undo();
+    editor.select({ kind: "bus-line", id: lineId }); editor.deleteSelected(); expect(editor.state.city.busLines).toEqual([]); expect(editor.state.city.busStops).toEqual([]); editor.undo(); expect(editor.state.city.busLines).toHaveLength(1); expect(editor.state.city.busStops).toHaveLength(1);
+    editor.select({ kind: "bus-terminal", id: start }); editor.deleteSelected(); expect(editor.state.city.busTerminals!.map((terminal) => terminal.id)).toEqual([end]); expect(editor.state.city.busLines).toEqual([]); expect(editor.state.city.busStops).toEqual([]); editor.undo(); expect(editor.state.city.busTerminals).toHaveLength(2); expect(editor.state.city.busLines).toHaveLength(1); expect(editor.state.city.busStops).toHaveLength(1); editor.redo(); expect(editor.state.city.busLines).toEqual([]);
+  });
+
+  it("rejects missing bus references and skips no-op history entries", () => {
+    const editor = new Editor(city()); expect(editor.createBusLine({ name: "Invalid", color: "#000000", startTerminalId: "missing", endTerminalId: "missing", path: [], direction: "start-to-end" })).toBeUndefined(); expect(editor.createBusStop({ name: "Invalid", lineId: "missing", roadEdgeId: "missing", fraction: 0.5, position: { x: 0, y: 0 }, side: "left" })).toBeUndefined(); expect(editor.commands.canUndo).toBe(false);
+    const id = editor.createBusTerminal({ name: "Terminal", position: { x: 10, y: 20 } }); const start = editor.createBusTerminal({ name: "Start", position: { x: 0, y: 0 } }); const end = editor.createBusTerminal({ name: "End", position: { x: 220, y: 80 } }); editor.commands.clear(); expect(editor.createBusLine({ name: "Disconnected", color: "#000000", startTerminalId: start, endTerminalId: end, path: [{ roadEdgeId: "old-edge", forward: true }, { roadEdgeId: "new-edge", forward: true }], direction: "start-to-end" })).toBeUndefined(); editor.updateBusTerminal(id, { name: "Terminal" }); editor.moveBusTerminal(id, { x: 10, y: 20 }); expect(editor.commands.canUndo).toBe(false);
+  });
+
+  it("orders stops by directed route position rather than creation time", () => {
+    const editor = new Editor(city()); const start = editor.createBusTerminal({ name: "Start", position: { x: 0, y: 0 } }); const end = editor.createBusTerminal({ name: "End", position: { x: 100, y: 0 } }); const lineId = editor.createBusLine({ name: "B5", color: "#4488aa", startTerminalId: start, endTerminalId: end, path: [{ roadEdgeId: "old-edge", forward: true }], direction: "start-to-end" })!; const late = editor.createBusStop({ name: "Late", lineId, roadEdgeId: "old-edge", fraction: 0.8, position: { x: 80, y: 0 }, side: "left" })!; const early = editor.createBusStop({ name: "Early", lineId, roadEdgeId: "old-edge", fraction: 0.2, position: { x: 20, y: 0 }, side: "right" })!;
+    expect(editor.state.city.busLines[0]?.stopIds).toEqual([early, late]); editor.updateBusStop(late, { fraction: 0.1 }); expect(editor.state.city.busLines[0]?.stopIds).toEqual([late, early]);
+  });
+
+  it("migrates bus paths and stops when a referenced road edge is split", () => {
+    const editor = new Editor(city()); const start = editor.createBusTerminal({ name: "Start", position: { x: 0, y: 0 } }); const end = editor.createBusTerminal({ name: "End", position: { x: 100, y: 0 } }); const lineId = editor.createBusLine({ name: "B3", color: "#2266aa", startTerminalId: start, endTerminalId: end, path: [{ roadEdgeId: "old-edge", forward: true }], direction: "start-to-end" })!; const stopId = editor.createBusStop({ name: "Middle", lineId, roadEdgeId: "old-edge", fraction: 0.5, position: { x: 50, y: 0 }, side: "left" })!;
+    editor.commands.clear(); editor.splitRoadEdge("old-edge", { x: 40, y: 0 }); const line = editor.state.city.busLines[0]!; const stop = editor.state.city.busStops[0]!; expect(line.path).toHaveLength(2); expect(line.path.every((step) => editor.state.city.roadEdges.some((edge) => edge.id === step.roadEdgeId))).toBe(true); expect(line.stopIds).toEqual([stopId]); expect(line.path.some((step) => step.roadEdgeId === stop.roadEdgeId)).toBe(true); expect(stop.position.x).toBeCloseTo(50);
+    editor.undo(); expect(editor.state.city.busLines[0]?.path).toEqual([{ roadEdgeId: "old-edge", forward: true }]); expect(editor.state.city.busStops[0]).toMatchObject({ id: stopId, roadEdgeId: "old-edge", fraction: 0.5 }); editor.redo(); expect(editor.state.city.busLines[0]?.path).toHaveLength(2);
+  });
+
+  it("prunes invalid bus path steps and restores them with road deletion undo", () => {
+    const editor = new Editor(city()); const start = editor.createBusTerminal({ name: "Start", position: { x: 0, y: 0 } }); const end = editor.createBusTerminal({ name: "End", position: { x: 100, y: 0 } }); const lineId = editor.createBusLine({ name: "B4", color: "#aa6622", startTerminalId: start, endTerminalId: end, path: [{ roadEdgeId: "old-edge", forward: true }], direction: "start-to-end" })!; editor.createBusStop({ name: "Middle", lineId, roadEdgeId: "old-edge", fraction: 0.5, position: { x: 50, y: 0 }, side: "right" });
+    editor.commands.clear(); editor.select({ kind: "road", id: "old", edgeId: "old-edge" }); editor.deleteSelected(); expect(editor.state.city.busLines).toEqual([]); expect(editor.state.city.busStops).toEqual([]);
+    editor.undo(); expect(editor.state.city.busLines[0]?.path).toEqual([{ roadEdgeId: "old-edge", forward: true }]); expect(editor.state.city.busStops).toHaveLength(1);
   });
 });
