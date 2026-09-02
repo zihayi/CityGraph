@@ -129,6 +129,28 @@ export interface FacilityPOI {
 
 export const defaultFacilityColor = "#2d9f9b";
 
+export const defaultFacilityColors: Record<string, string> = {
+  bakery: "#ab8f03",
+  bar: "#dcb7d4",
+  bookstore: "#9f702d",
+  "bubble-tea": "#099584",
+  "coffee-shop": "#98502a",
+  company: "#4776a8",
+  "gas-station": "#cb102c",
+  habor: "#0078c2",
+  hotel: "#7749bc",
+  lab: "#6a55a3",
+  parking: "#5389d0",
+  "pet-shop": "#c4b464",
+  restaurant: "#f09833",
+  store: "#5f68dd",
+  supermarket: "#2d9f9b",
+};
+
+export function facilityDefaultColor(type: string): string {
+  return defaultFacilityColors[type] ?? defaultFacilityColor;
+}
+
 export interface TransitStation extends Point {
   id: string;
   type: TransitType;

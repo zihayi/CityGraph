@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createNewCity } from "../model/mapGenerator";
 import { SaveManager } from "./SaveManager";
 import { roadIdentityGroupEdges } from "../editor/RoadIdentity";
-import { defaultFacilityColor } from "../model/City";
+import { defaultFacilityColor, facilityDefaultColor } from "../model/City";
 
 class MemoryFile {
   public content = "";
@@ -146,7 +146,7 @@ describe("SaveManager", () => {
   it("adds the default color when loading facilities saved before marker colors", async () => {
     const saves = new MemoryDirectory(); installStorage(saves); const city = createNewCity({ name: "Legacy Facility", size: "small", terrain: "flat", lakeCount: 1 }); city.facilities.push({ id: "facility", type: "store", name: "Store", position: { x: 12, y: 18 }, icon: "store.svg", color: defaultFacilityColor }); await new SaveManager().saveAs(city.name, city, { x: 0, y: 0, zoom: 1, rotation: 0 });
     const file = saves.directories.get(city.name)!.files.get("facilities.json")!; const document = JSON.parse(file.content) as { facilities: Array<Record<string, unknown>> }; delete document.facilities[0]!.color; file.content = JSON.stringify(document);
-    const loaded = await new SaveManager().load(); expect(loaded.city.facilities[0]?.color).toBe(defaultFacilityColor);
+    const loaded = await new SaveManager().load(); expect(loaded.city.facilities[0]?.color).toBe(facilityDefaultColor("store"));
   });
 
   it("migrates version 2 edge-based road saves", async () => {

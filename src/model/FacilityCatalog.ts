@@ -1,9 +1,11 @@
 import type { Locale } from "../i18n";
+import { facilityDefaultColor } from "./City";
 
 export interface FacilityCatalogEntry {
   type: string;
   icon: string;
   iconUrl: string;
+  color: string;
   englishName: string;
 }
 
@@ -19,7 +21,11 @@ const chineseNames: Record<string, string> = {
   bookstore: "书店",
   "bubble-tea": "奶茶店",
   "coffee-shop": "咖啡店",
+  company: "公司",
+  "gas-station": "加油站",
+  habor: "港口",
   hotel: "酒店",
+  lab: "实验室",
   parking: "停车场",
   "pet-shop": "宠物店",
   restaurant: "餐厅",
@@ -35,7 +41,7 @@ export const facilityCatalog: FacilityCatalogEntry[] = Object.entries(iconModule
   .map(([path, iconUrl]) => {
     const icon = path.split("/").at(-1) ?? "";
     const type = icon.replace(/\.svg$/i, "");
-    return { type, icon, iconUrl, englishName: formatFacilityName(type) };
+    return { type, icon, iconUrl, color: facilityDefaultColor(type), englishName: formatFacilityName(type) };
   })
   .filter((entry) => entry.type)
   .sort((a, b) => a.englishName.localeCompare(b.englishName));

@@ -12,7 +12,7 @@ import { nearestPointOnSegment } from "../geometry/Segment";
 import { nearestZoneSegment } from "../geometry/ZoneGeometry";
 import { busPathDistance, busStopGeometry, locatePointOnRoad } from "../geometry/BusGeometry";
 import type { Point } from "../geometry/Point";
-import { defaultFacilityColor, type Building, type BuildingStyle, type BuildingType, type BusPathStep, type BusStop, type FacilityPOI, type RoadCategory, type RoadGeometry, type RoadStructure, type RoadSubtype, type ZoneType } from "../model/City";
+import { facilityDefaultColor, type Building, type BuildingStyle, type BuildingType, type BusPathStep, type BusStop, type FacilityPOI, type RoadCategory, type RoadGeometry, type RoadStructure, type RoadSubtype, type ZoneType } from "../model/City";
 import { isFacilityPlacementValid } from "../model/FacilityPlacement";
 import { createBuildingPreset, dragFootprintEdge, extrudeFootprintEdge, footprintContainsPoint, footprintEdgeOutwardNormal, isValidBuildingFootprint, nearestFootprintEdge, translateFootprint, type BuildingPreset, type FootprintEdge } from "../geometry/BuildingGeometry";
 import { MapCamera } from "./MapCamera";
@@ -121,12 +121,12 @@ export class MapViewport {
   public resetView(): void { this.fitCity(); }
   public getCameraState(): CameraState { return { x: this.camera.x, y: this.camera.y, zoom: this.camera.zoom, rotation: this.camera.rotation }; }
   public setCameraState(state: CameraState): void { this.camera.setState(state); this.applyCamera(); }
-  public createFacilityAtClientPosition(clientX: number, clientY: number, type: string, name: string, icon: string): string | undefined {
+  public createFacilityAtClientPosition(clientX: number, clientY: number, type: string, name: string, icon: string, color = facilityDefaultColor(type)): string | undefined {
     if (!this.options.inputEnabled || !this.options.layers.facilities || !this.canvas) return undefined;
     const rect = this.canvas.getBoundingClientRect(); const position = this.camera.screenToMap({ x: clientX - rect.left, y: clientY - rect.top });
     if (!isFacilityPlacementValid(this.editor.state.city.buildings, position)) { this.options.onValidation?.("facility.invalid.building"); return undefined; }
     this.options.onValidation?.();
-    return this.editor.createFacility({ type, name, icon, color: defaultFacilityColor, position });
+    return this.editor.createFacility({ type, name, icon, color, position });
   }
   public northUp(): void {
     cancelAnimationFrame(this.northAnimation); const start = this.camera.rotation; const started = performance.now();

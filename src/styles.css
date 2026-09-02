@@ -688,6 +688,7 @@ button {
 .facility-grid button { display: flex; min-width: 0; height: 42px; align-items: center; gap: 10px; border: 1px solid rgb(82 123 137 / 40%); border-radius: 8px; padding: 0 9px; background: rgb(11 40 52 / 60%); color: #d3dfe2; cursor: pointer; }
 .facility-grid button:hover { border-color: #39d1d0; background: rgb(15 93 101 / 55%); color: #f3ffff; }
 .facility-grid button.is-active { border-color: #5ce2dd; background: rgb(17 112 117 / 72%); box-shadow: inset 3px 0 #79f3eb, 0 0 16px rgb(50 211 205 / 15%); color: #fff; }
+.facility-grid .facility-color { width: 5px; height: 24px; flex: 0 0 auto; border-radius: 4px; box-shadow: 0 0 0 1px rgb(255 255 255 / 24%); }
 .facility-grid img { width: 25px; height: 25px; flex: 0 0 auto; object-fit: contain; filter: invert(92%) sepia(12%) saturate(315%) hue-rotate(130deg); }
 .facility-grid span { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .map-stage.is-placing-facility .citygraph-canvas { cursor: crosshair; }

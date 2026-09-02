@@ -10,7 +10,7 @@ export interface MapCanvasHandle {
   northUp: () => void;
   getCameraState: () => CameraState;
   setCameraState: (state: CameraState) => void;
-  createFacilityAtClientPosition: (clientX: number, clientY: number, type: string, name: string, icon: string) => string | undefined;
+  createFacilityAtClientPosition: (clientX: number, clientY: number, type: string, name: string, icon: string, color?: string) => string | undefined;
 }
 interface Props {
   editor: Editor;
@@ -40,7 +40,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(p
   useImperativeHandle(ref, () => ({
     zoomIn: () => viewportRef.current?.zoomIn(), zoomOut: () => viewportRef.current?.zoomOut(), resetView: () => viewportRef.current?.resetView(), northUp: () => viewportRef.current?.northUp(),
     getCameraState: () => viewportRef.current?.getCameraState() ?? { x: 0, y: 0, zoom: 1, rotation: 0 }, setCameraState: (state) => viewportRef.current?.setCameraState(state),
-    createFacilityAtClientPosition: (clientX, clientY, type, name, icon) => viewportRef.current?.createFacilityAtClientPosition(clientX, clientY, type, name, icon),
+    createFacilityAtClientPosition: (clientX, clientY, type, name, icon, color) => viewportRef.current?.createFacilityAtClientPosition(clientX, clientY, type, name, icon, color),
   }));
 
   useEffect(() => {
