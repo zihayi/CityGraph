@@ -1,0 +1,89 @@
+import { Check, Eye, GripVertical, Layers3, Trash2, Wand2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import type { EditorTool, LayerId, LayerVisibility } from "../../app/store/editorStore";
+import type { Editor } from "../../editor/Editor";
+import type { TranslationKey } from "../../i18n";
+import type { Building, BuildingType, Road, RoadCategory, RoadStructure, RoadSubtype, Zone, ZoneType } from "../../model/City";
+import { soundManager } from "../../services/SoundManager";
+import { roadIdentityGroupEdges, selectedRoadEdge } from "../../editor/RoadIdentity";
+import { formatZoneArea, formatZonePerimeter, zoneArea, zonePerimeter } from "../../geometry/ZoneGeometry";
+import { defaultZoneColors, defaultZoneIconColors, defaultZoneIcons, editableZoneTypes, zoneIconIds } from "../../model/ZoneStyle";
+
+const layers: Array<{ id: LayerId; key: TranslationKey }> = [
+  { id: "baseMap", key: "layers.baseMap" }, { id: "roads", key: "layers.roads" }, { id: "buildings", key: "layers.buildings" }, { id: "poi", key: "layers.poi" }, { id: "transit", key: "layers.transit" }, { id: "parks", key: "layers.parks" }, { id: "water", key: "layers.water" }, { id: "labels", key: "layers.labels" }, { id: "zoning", key: "layers.zoning" }, { id: "grid", key: "layers.grid" },
+];
+const subtypeKeys: Record<RoadSubtype, TranslationKey> = { large: "road.subtype.large", medium: "road.subtype.medium", small: "road.subtype.small", pedestrian: "road.subtype.pedestrian", highway: "road.subtype.highway", ramp: "road.subtype.ramp" };
+const structureKeys: Record<RoadStructure, TranslationKey> = { ground: "road.structure.ground", elevated: "road.structure.elevated", tunnel: "road.structure.tunnel" };
+const categoryKeys: Record<RoadCategory, TranslationKey> = { normal: "road.category.normal", pedestrian: "road.category.pedestrian", highway: "road.category.highway" };
+const zoneTypeKeys: Record<(typeof editableZoneTypes)[number], TranslationKey> = { residential: "zone.type.residential", commercial: "zone.type.commercial", education: "zone.type.education", medical: "zone.type.medical", government: "zone.type.government", industrial: "zone.type.industrial", office: "zone.type.office", green: "zone.type.green", mixed: "zone.type.mixed", custom: "zone.type.custom" };
+const buildingTypeKeys: Record<BuildingType, TranslationKey> = { residential: "building.type.residential", commercial: "building.type.commercial", office: "building.type.office", industrial: "building.type.industrial", public: "building.type.public" };
+
+function DescriptionField({ value, readOnly = false, t, onCommit }: { value?: string; readOnly?: boolean; t: (key: TranslationKey) => string; onCommit?: (value: string) => void }) {
+  const [description, setDescription] = useState(value ?? ""); useEffect(() => setDescription(value ?? ""), [value]);
+  return <details className="description-editor"><summary>{t("common.description")}</summary>{readOnly ? <p>{value?.trim() || t("common.descriptionEmpty")}</p> : <textarea value={description} placeholder={t("common.descriptionPlaceholder")} onChange={(event) => setDescription(event.target.value)} onBlur={() => { if (description !== (value ?? "")) onCommit?.(description); }}/>}</details>;
+}
+
+function RoadPropertyForm({ editor, road, edgeId, edgeName, groupSize, structure, t, click }: { editor: Editor; road: Road; edgeId: string; edgeName: string; groupSize: number; structure: RoadStructure; t: (key: TranslationKey) => string; click: () => void }) {
+  const [name, setName] = useState(edgeName); const [renameScope, setRenameScope] = useState<"group" | "segment">("group");
+  const renameScopeRef = useRef(renameScope);
+  const [width, setWidth] = useState(String(road.width));
+  useEffect(() => { setName(edgeName); renameScopeRef.current = "group"; setRenameScope("group"); setWidth(String(road.width)); }, [edgeId, edgeName, road.width]);
+  const commitWidth = () => {
+    const parsed = Number(width);
+    const value = Number.isFinite(parsed) ? Math.max(2, Math.min(60, Math.round(parsed * 2) / 2)) : road.width;
+    setWidth(String(value));
+    if (value !== road.width) editor.updateRoad(road.id, { width: value });
+  };
+  return <div className="property-form">
+    <label>{t("common.name")}<input value={name} onChange={(event) => setName(event.target.value)} onBlur={() => { window.setTimeout(() => { if (name !== edgeName) editor.renameRoadEdge(edgeId, name, renameScopeRef.current); }, 0); }}/></label>
+    <label>{t("properties.renameScope")}<select value={renameScope} onChange={(event) => { const value = event.target.value as "group" | "segment"; renameScopeRef.current = value; setRenameScope(value); }}><option value="group">{t("properties.renameGroup")}</option><option value="segment">{t("properties.renameSegment")}</option></select></label>
+    <label>{t("properties.category")}<select value={road.category} onChange={(event) => { click(); editor.updateRoad(road.id, { category: event.target.value as RoadCategory }); }}>{(Object.keys(categoryKeys) as RoadCategory[]).map((value) => <option key={value} value={value}>{t(categoryKeys[value])}</option>)}</select></label>
+    <label>{t("properties.subtype")}<select value={road.subtype} onChange={(event) => { click(); editor.updateRoad(road.id, { subtype: event.target.value as RoadSubtype }); }}>{(Object.keys(subtypeKeys) as RoadSubtype[]).map((value) => <option key={value} value={value}>{t(subtypeKeys[value])}</option>)}</select></label>
+    <label>{t("common.width")}<div className="unit-input"><input type="number" min="2" max="60" step="0.5" value={width} onChange={(event) => setWidth(event.target.value)} onBlur={commitWidth} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); }}/><span>m</span></div></label>
+    <label>{t("properties.structure")}<select value={structure} onChange={(event) => { click(); editor.updateRoadStructure(road.id, event.target.value as RoadStructure); }}>{(Object.keys(structureKeys) as RoadStructure[]).map((value) => <option key={value} value={value}>{t(structureKeys[value])}</option>)}</select></label>
+    <p>{t("properties.segmentCount")}: {groupSize}</p>
+    <DescriptionField value={road.description} t={t} onCommit={(description) => editor.updateRoad(road.id, { description })}/>
+    <button className="secondary-action" type="button" onClick={() => { click(); editor.straightenRoad(road.id); }}><Wand2 size={16}/>{t("properties.straighten")}</button><button className="danger-action" type="button" onClick={() => { click(); editor.deleteSelected(); }}><Trash2 size={16}/>{t("common.delete")}</button>
+  </div>;
+}
+
+function ZonePropertyForm({ editor, zone, readOnly, t, click }: { editor: Editor; zone: Zone; readOnly: boolean; t: (key: TranslationKey) => string; click: () => void }) {
+  const [name, setName] = useState(zone.name ?? ""); const [opacity, setOpacity] = useState(zone.opacity);
+  useEffect(() => { setName(zone.name ?? ""); setOpacity(zone.opacity); }, [zone.id, zone.name, zone.opacity]);
+  const commitOpacity = () => { if (Math.abs(opacity - zone.opacity) > 0.001) editor.updateZone(zone.id, { opacity }); };
+  if (readOnly) return <div className="property-form property-view"><p><b>{t("common.name")}</b>{zone.name?.trim() || "-"}</p><p><b>{t("zone.type")}</b>{zone.type === "public" ? zone.type : t(zoneTypeKeys[zone.type])}</p><p><b>{t("zone.opacity")}</b>{Math.round(zone.opacity * 100)}%</p><p><b>{t("zone.area")}</b>{formatZoneArea(zoneArea(zone.polygon))}</p><p><b>{t("zone.perimeter")}</b>{formatZonePerimeter(zonePerimeter(zone.polygon))}</p><p><b>{t("zone.source")}</b>{t(zone.source === "custom" ? "zone.source.custom" : "zone.source.road-fill")}</p><DescriptionField value={zone.description} readOnly t={t}/></div>;
+  return <div className="property-form">
+    <label>{t("common.name")}<input value={name} onChange={(event) => setName(event.target.value)} onBlur={() => { if (name !== (zone.name ?? "")) editor.updateZone(zone.id, { name }); }}/></label>
+    <label>{t("zone.type")}<select value={zone.type} onChange={(event) => { click(); const type = event.target.value as ZoneType; editor.updateZone(zone.id, { type, color: type === "custom" ? zone.color : defaultZoneColors[type], icon: type === "custom" ? zone.icon : defaultZoneIcons[type], iconColor: type === "custom" ? zone.iconColor : defaultZoneIconColors[type], iconOpacity: type === "custom" ? zone.iconOpacity : 1 }); }}>{editableZoneTypes.map((type) => <option key={type} value={type}>{t(zoneTypeKeys[type])}</option>)}</select></label>
+    {zone.type === "custom" && <><label>{t("zone.color")}<input type="color" value={zone.color ?? defaultZoneColors.custom} onChange={(event) => editor.updateZone(zone.id, { color: event.target.value })}/></label><label>{t("zone.icon")}<select value={zone.icon ?? zoneIconIds[0]} onChange={(event) => editor.updateZone(zone.id, { icon: event.target.value })}>{zoneIconIds.map((icon) => <option key={icon} value={icon}>{icon}</option>)}</select></label><label>{t("zone.iconColor")}<input type="color" value={zone.iconColor ?? defaultZoneIconColors.custom} onChange={(event) => editor.updateZone(zone.id, { iconColor: event.target.value })}/></label><label>{t("zone.iconOpacity")}<div className="opacity-control"><input type="range" min="0" max="1" step="0.05" value={zone.iconOpacity ?? 1} onChange={(event) => editor.updateZone(zone.id, { iconOpacity: Number(event.target.value) })}/><output>{Math.round((zone.iconOpacity ?? 1) * 100)}%</output></div></label></>}
+    <label>{t("zone.opacity")}<div className="opacity-control"><input type="range" min="0.05" max="1" step="0.05" value={opacity} onChange={(event) => setOpacity(Number(event.target.value))} onPointerUp={commitOpacity} onBlur={commitOpacity}/><output>{Math.round(opacity * 100)}%</output></div></label>
+    <p>{t("zone.area")}: {formatZoneArea(zoneArea(zone.polygon))}</p><p>{t("zone.perimeter")}: {formatZonePerimeter(zonePerimeter(zone.polygon))}</p><p>{t("zone.source")}: {t(zone.source === "custom" ? "zone.source.custom" : "zone.source.road-fill")}</p>
+    <DescriptionField value={zone.description} t={t} onCommit={(description) => editor.updateZone(zone.id, { description })}/>
+    <button className="danger-action" type="button" onClick={() => { click(); editor.deleteSelected(); }}><Trash2 size={16}/>{t("common.delete")}</button>
+  </div>;
+}
+
+function BuildingPropertyForm({ editor, building, t, click }: { editor: Editor; building: Building; t: (key: TranslationKey) => string; click: () => void }) {
+  const [name, setName] = useState(building.name ?? ""); useEffect(() => setName(building.name ?? ""), [building.id, building.name]);
+  return <div className="property-form"><label>{t("common.name")}<input value={name} onChange={(event) => setName(event.target.value)} onBlur={() => { if (name !== (building.name ?? "")) editor.updateBuilding(building.id, { name }); }}/></label><label>{t("properties.buildingType")}<select value={building.type} onChange={(event) => editor.updateBuilding(building.id, { type: event.target.value as BuildingType })}>{(Object.keys(buildingTypeKeys) as BuildingType[]).map((type) => <option key={type} value={type}>{t(buildingTypeKeys[type])}</option>)}</select></label><p>{t("common.width")}: {building.width.toFixed(1)} m × {building.height.toFixed(1)} m</p><DescriptionField value={building.description} t={t} onCommit={(description) => editor.updateBuilding(building.id, { description })}/><button className="danger-action" type="button" onClick={() => { click(); editor.deleteSelected(); }}><Trash2 size={16}/>{t("common.delete")}</button></div>;
+}
+
+interface Props { editor: Editor; tool: EditorTool; visibility: LayerVisibility; zoningOpacity: number; onZoningOpacity: (opacity: number) => void; onToggleLayer: (id: LayerId) => void; t: (key: TranslationKey) => string }
+export function RightPanel({ editor, tool, visibility, zoningOpacity, onZoningOpacity, onToggleLayer, t }: Props) {
+  const [layersOpen, setLayersOpen] = useState(false); const selection = editor.selection;
+  const roadEdge = selection?.kind === "road" ? selectedRoadEdge(editor.state.city, selection) : undefined;
+  const road = roadEdge ? editor.state.city.roads.find((item) => item.id === roadEdge.roadId) : selection?.kind === "road" ? editor.state.city.roads.find((item) => item.id === selection.id) : undefined;
+  const structure = roadEdge?.structure ?? (road ? editor.state.city.roadEdges.find((edge) => edge.roadId === road.id)?.structure ?? "ground" : "ground");
+  const groupSize = roadEdge ? roadIdentityGroupEdges(editor.state.city, roadEdge).length : road?.segmentIds.length ?? 0;
+  const node = selection?.kind === "node" ? editor.state.city.roadNodes.find((item) => item.id === selection.id) : undefined;
+  const zone = selection?.kind === "zone" ? editor.state.city.zones.find((item) => item.id === selection.id) : undefined;
+  const building = selection?.kind === "building" ? editor.state.city.buildings.find((item) => item.id === selection.id) : undefined;
+  const click = () => soundManager.playClick();
+  return <aside className="right-floating-ui">
+    <button className={`layers-orb ${layersOpen ? "is-active" : ""}`} type="button" title={t("layers.title")} onClick={() => { click(); setLayersOpen((value) => !value); }}><Layers3 size={22}/></button>
+    {layersOpen && <section className="floating-panel layers-popover glass-panel"><header><strong>{t("layers.title")}</strong><button type="button" onClick={() => { click(); setLayersOpen(false); }}><X size={16}/></button></header><div className="layer-list">{layers.map((item) => <div className="layer-item" key={item.id}><button type="button" onClick={() => { click(); onToggleLayer(item.id); }}><span className={`layer-check ${visibility[item.id] ? "is-checked" : ""}`}>{visibility[item.id] && <Check size={13}/>}</span><span className="layer-name">{t(item.key)}</span><Eye size={16} className={visibility[item.id] ? "" : "is-muted"}/><GripVertical size={15} className="grip"/></button>{item.id === "zoning" && <label className="layer-opacity"><span>{t("zone.layerOpacity")}</span><input type="range" min="0.05" max="1" step="0.05" value={zoningOpacity} onChange={(event) => onZoningOpacity(Number(event.target.value))}/><output>{Math.round(zoningOpacity * 100)}%</output></label>}</div>)}</div></section>}
+    {(road || node || zone || building) && <section className="floating-panel properties-popover glass-panel"><header><strong>{zone ? t("properties.zone") : building ? t("properties.building") : road ? t("properties.road") : t("properties.node")}</strong><button type="button" onClick={() => editor.select(null)}><X size={16}/></button></header>
+      {zone ? <ZonePropertyForm editor={editor} zone={zone} readOnly={tool === "select"} t={t} click={click}/> : building ? <BuildingPropertyForm editor={editor} building={building} t={t} click={click}/> : road && roadEdge ? <RoadPropertyForm editor={editor} road={road} edgeId={roadEdge.id} edgeName={roadEdge.name} groupSize={groupSize} structure={structure} t={t} click={click}/> : node && <div className="property-form"><p>{t("properties.coordinates")}: {node.x.toFixed(1)}, {node.y.toFixed(1)}</p><button className="danger-action" type="button" onClick={() => { click(); editor.deleteSelected(); }}><Trash2 size={16}/>{t("common.delete")}</button></div>}
+    </section>}
+  </aside>;
+}
