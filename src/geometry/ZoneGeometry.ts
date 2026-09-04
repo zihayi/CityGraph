@@ -13,9 +13,7 @@ export function zonePerimeter(polygon: Point[]): number {
 }
 
 export function formatZoneArea(squareMeters: number): string {
-  if (squareMeters >= 1_000_000) return `${formatValue(squareMeters / 1_000_000)} km²`;
-  if (squareMeters >= 10_000) return `${formatValue(squareMeters / 10_000)} ha`;
-  return `${formatValue(squareMeters)} m²`;
+  return `${formatValue(squareMeters * 3 / 2000)} 亩`;
 }
 
 export function formatZonePerimeter(meters: number): string {

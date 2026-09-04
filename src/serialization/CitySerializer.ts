@@ -1,13 +1,14 @@
 import type { City } from "../model/City";
 
 export interface CityDocument {
-  version: 4;
+  version: 5;
   city: Pick<City, "id" | "name" | "bounds">;
   roadNodes: City["roadNodes"];
   roads: City["roads"];
   roadEdges: City["roadEdges"];
   blocks: City["blocks"];
   zones: City["zones"];
+  universities: City["universities"];
   buildings: City["buildings"];
   parks: City["parks"];
   water: City["waters"];
@@ -24,13 +25,14 @@ export interface CityDocument {
 export class CitySerializer {
   public static toDocument(city: City): CityDocument {
     return {
-      version: 4,
+      version: 5,
       city: { id: city.id, name: city.name, bounds: city.bounds },
       roadNodes: city.roadNodes,
       roads: city.roads,
       roadEdges: city.roadEdges,
       blocks: city.blocks,
       zones: city.zones,
+      universities: city.universities,
       buildings: city.buildings,
       parks: city.parks,
       water: city.waters,

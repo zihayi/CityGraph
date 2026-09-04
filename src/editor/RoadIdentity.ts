@@ -1,6 +1,7 @@
 import type { City, RoadEdge } from "../model/City";
 
-export interface RoadSelectionRef { id: string; edgeId?: string }
+export type RoadSelectionScope = "logical" | "segment";
+export interface RoadSelectionRef { id: string; edgeId?: string; scope?: RoadSelectionScope }
 
 export function selectedRoadEdge(city: Pick<City, "roadEdges">, selection: RoadSelectionRef): RoadEdge | undefined {
   return selection.edgeId ? city.roadEdges.find((edge) => edge.id === selection.edgeId) : city.roadEdges.find((edge) => edge.roadId === selection.id);
@@ -8,6 +9,12 @@ export function selectedRoadEdge(city: Pick<City, "roadEdges">, selection: RoadS
 
 export function roadIdentityGroupEdges(city: Pick<City, "roadEdges">, anchor: RoadEdge): RoadEdge[] {
   return anchor.name.trim().length > 0 ? city.roadEdges.filter((edge) => edge.name === anchor.name) : city.roadEdges.filter((edge) => edge.roadId === anchor.roadId && edge.name.trim().length === 0);
+}
+
+export function selectedRoadEdges(city: Pick<City, "roadEdges">, selection: RoadSelectionRef): RoadEdge[] {
+  const anchor = selectedRoadEdge(city, selection);
+  if (!anchor) return [];
+  return selection.scope === "segment" ? [anchor] : roadIdentityGroupEdges(city, anchor);
 }
 
 export function roadIdentityTerminalNodeIds(edges: RoadEdge[]): string[] {

@@ -61,7 +61,7 @@ export function createNewCity(options: NewMapOptions): City {
     bounds: { x: origin, y: origin, width: dimension, height: dimension },
     mapSize: options.size,
     terrain: options.terrain,
-    roadNodes: [], roads: [], roadEdges: [], buildings: [], blocks: [], zones: [], parks: [], waters,
+    roadNodes: [], roads: [], roadEdges: [], buildings: [], blocks: [], zones: [], universities: [], parks: [], waters,
     pois: [], facilities: [], transitLines: [], transitStations: [], busTerminals: [], busLines: [], busStops: [], labels: [],
   };
 }

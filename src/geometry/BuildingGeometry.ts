@@ -80,6 +80,11 @@ export function nearestFootprintEdge(footprint: BuildingFootprint, point: Point)
   return nearest;
 }
 
+export function createBuildingRectangleFromCorners(first: Point, opposite: Point): BuildingFootprint {
+  const minX = Math.min(first.x, opposite.x); const maxX = Math.max(first.x, opposite.x); const minY = Math.min(first.y, opposite.y); const maxY = Math.max(first.y, opposite.y);
+  return { outer: [{ x: minX, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: minX, y: maxY }], holes: [] };
+}
+
 export function createBuildingPreset(preset: BuildingPreset, center: Point, width: number, depth: number, rotation = 0): BuildingFootprint {
   const w = Math.max(4, width); const d = Math.max(4, depth); const t = Math.max(0.5, Math.min(w, d) * 0.28); let outer: Point[]; let holes: Point[][] = [];
   if (preset === "l") outer = [{ x: -w / 2, y: -d / 2 }, { x: w / 2, y: -d / 2 }, { x: w / 2, y: -d / 2 + t }, { x: -w / 2 + t, y: -d / 2 + t }, { x: -w / 2 + t, y: d / 2 }, { x: -w / 2, y: d / 2 }];

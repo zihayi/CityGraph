@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { City } from "../model/City";
 import { Editor } from "./Editor";
 import { buildRoadCreation, splitRoadEdge } from "./RoadGraph";
-import { connectedRoadEdgeComponents, roadIdentityGroupEdges } from "./RoadIdentity";
+import { connectedRoadEdgeComponents, roadIdentityGroupEdges, selectedRoadEdges } from "./RoadIdentity";
 
 function emptyCity(): City {
-  return { id: "identity", name: "Identity", bounds: { x: -200, y: -200, width: 800, height: 800 }, mapSize: "small", terrain: "flat", roadNodes: [], roads: [], roadEdges: [], buildings: [], blocks: [], zones: [], parks: [], waters: [], pois: [], facilities: [], transitLines: [], transitStations: [], busTerminals: [], busLines: [], busStops: [], labels: [] };
+  return { id: "identity", name: "Identity", bounds: { x: -200, y: -200, width: 800, height: 800 }, mapSize: "small", terrain: "flat", roadNodes: [], roads: [], roadEdges: [], buildings: [], blocks: [], zones: [], parks: [], waters: [], pois: [], facilities: [], universities: [], transitLines: [], transitStations: [], busTerminals: [], busLines: [], busStops: [], labels: [] };
 }
 function add(city: City, start: { x: number; y: number }, end: { x: number; y: number }, name: string): City {
   const result = buildRoadCreation(city, { start, end, category: "normal", subtype: "small", width: 8, name, structure: "ground", geometry: { type: "line" } });
@@ -54,5 +54,11 @@ describe("road name identity groups", () => {
   it("does not group unnamed edges from different internal roads", () => {
     let city = add(emptyCity(), { x: 0, y: 0 }, { x: 100, y: 0 }, ""); city = add(city, { x: 200, y: 0 }, { x: 300, y: 0 }, "");
     expect(roadIdentityGroupEdges(city, city.roadEdges[0]!)).toHaveLength(1); expect(roadIdentityGroupEdges(city, city.roadEdges[1]!)).toHaveLength(1);
+  });
+
+  it("resolves logical and segment selections explicitly", () => {
+    let city = add(emptyCity(), { x: 0, y: 0 }, { x: 100, y: 0 }, "环湖路"); city = add(city, { x: 300, y: 0 }, { x: 400, y: 0 }, "环湖路"); const anchor = city.roadEdges[0]!;
+    expect(selectedRoadEdges(city, { id: anchor.roadId, edgeId: anchor.id, scope: "logical" })).toHaveLength(2);
+    expect(selectedRoadEdges(city, { id: anchor.roadId, edgeId: anchor.id, scope: "segment" })).toEqual([anchor]);
   });
 });

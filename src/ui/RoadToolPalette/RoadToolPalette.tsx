@@ -1,11 +1,11 @@
-import { Activity, Circle, Copy, Footprints, GitBranch, Grid3X3, Hexagon, Magnet, Route, RotateCw, Spline, Waypoints } from "lucide-react";
+import { Activity, Circle, Copy, Footprints, GitBranch, Grid3X3, Hexagon, Magnet, MousePointer2, Route, RotateCw, Spline, Waypoints } from "lucide-react";
 import { roadWidthMeters, useEditorStore, type RoadShape } from "../../app/store/editorStore";
 import type { TranslationKey } from "../../i18n";
 import type { RoadStructure, RoadSubtype } from "../../model/City";
 
 const subtypeKeys: Record<RoadSubtype, TranslationKey> = { large: "road.subtype.large", medium: "road.subtype.medium", small: "road.subtype.small", pedestrian: "road.subtype.pedestrian", highway: "road.subtype.highway", ramp: "road.subtype.ramp" };
 const structureKeys: Record<RoadStructure, TranslationKey> = { ground: "road.structure.ground", elevated: "road.structure.elevated", tunnel: "road.structure.tunnel" };
-const shapes: Array<{ id: RoadShape; key: TranslationKey; icon: typeof Waypoints }> = [{ id: "draw", key: "road.shape.draw", icon: Waypoints }, { id: "parallel", key: "road.shape.parallel", icon: Copy }, { id: "circle", key: "road.shape.circle", icon: Circle }, { id: "polygon", key: "road.shape.polygon", icon: Hexagon }];
+const shapes: Array<{ id: RoadShape; key: TranslationKey; icon: typeof Waypoints }> = [{ id: "draw", key: "road.shape.draw", icon: Waypoints }, { id: "edit", key: "road.shape.edit", icon: MousePointer2 }, { id: "parallel", key: "road.shape.parallel", icon: Copy }, { id: "circle", key: "road.shape.circle", icon: Circle }, { id: "polygon", key: "road.shape.polygon", icon: Hexagon }];
 
 export function RoadToolPalette({ t }: { t: (key: TranslationKey) => string }) {
   const store = useEditorStore();
@@ -13,6 +13,7 @@ export function RoadToolPalette({ t }: { t: (key: TranslationKey) => string }) {
     <div className="palette-title"><Route size={17}/><span>{t("tools.roads")}</span></div>
     <div className="palette-shapes">{shapes.map(({ id, key, icon: Icon }) => <button key={id} className={store.roadShape === id ? "is-active" : ""} type="button" title={t(key)} onClick={() => store.setRoadShape(id)}><Icon size={17}/><small>{t(key)}</small></button>)}</div>
     {store.roadShape === "draw" && <div className="palette-toggle"><button className={store.roadMode === "straight" ? "is-active" : ""} type="button" title={t("road.straight")} onClick={() => store.setRoadMode("straight")}><Waypoints size={19}/><small>{t("road.straight")}</small></button><button className={store.roadMode === "curve" ? "is-active" : ""} type="button" title={t("road.curve")} onClick={() => store.setRoadMode("curve")}><Spline size={19}/><small>{t("road.curve")}</small></button></div>}
+    {store.roadShape !== "edit" && <>
     <label><GitBranch size={15}/><select value={store.roadSubtype} title={t("properties.subtype")} onChange={(event) => store.setRoadSubtype(event.target.value as RoadSubtype)}>{(Object.keys(subtypeKeys) as RoadSubtype[]).map((value) => <option key={value} value={value}>{t(subtypeKeys[value])} · {roadWidthMeters[value]} m</option>)}</select></label>
     <label><Activity size={15}/><div className="palette-width"><input type="number" min="2" max="60" step="0.5" value={store.roadWidth} title={t("common.width")} onChange={(event) => store.setRoadWidth(Number(event.target.value))}/><span>m</span></div></label>
     <label><Footprints size={15}/><select value={store.roadStructure} title={t("properties.structure")} onChange={(event) => store.setRoadStructure(event.target.value as RoadStructure)}>{(Object.keys(structureKeys) as RoadStructure[]).map((value) => <option key={value} value={value}>{t(structureKeys[value])}</option>)}</select></label>
@@ -22,5 +23,6 @@ export function RoadToolPalette({ t }: { t: (key: TranslationKey) => string }) {
     {store.roadShape === "polygon" && <label><Hexagon size={15}/><input type="number" min="3" max="24" value={store.roadPolygonSides} title={t("road.polygonSides")} onChange={(event) => store.setRoadPolygonSides(Number(event.target.value))}/></label>}
     {store.roadShape === "parallel" && <label><Copy size={15}/><div className="palette-width"><input type="number" min="1" max="500" value={store.roadParallelOffset} title={t("road.parallelOffset")} onChange={(event) => store.setRoadParallelOffset(Number(event.target.value))}/><span>m</span></div></label>}
     {store.roadShape === "parallel" && <small className="palette-hint">{t("road.parallelHint")}</small>}{(store.roadShape === "circle" || store.roadShape === "polygon") && <small className="palette-hint">{t("road.shapeHint")}</small>}
+    </>}
   </aside>;
 }

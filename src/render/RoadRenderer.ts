@@ -2,7 +2,7 @@ import { Container, Graphics } from "pixi.js";
 import type { EditorSelection } from "../editor/Editor";
 import type { Point } from "../geometry/Point";
 import type { City, RoadEdge, RoadNode, RoadSubtype } from "../model/City";
-import { roadIdentityGroupEdges, roadIdentityTerminalNodeIds, selectedRoadEdge } from "../editor/RoadIdentity";
+import { selectedRoadEdge, selectedRoadEdges } from "../editor/RoadIdentity";
 
 const subtypeColor: Record<RoadSubtype, number> = {
   large: 0xfdfcf8, medium: 0xfbfaf6, small: 0xf8f7f2,
@@ -33,12 +33,13 @@ function drawDashedPath(graphics: Graphics, points: Point[], dashLength: number,
 }
 
 export class RoadRenderer {
-  public render(city: City, selection: EditorSelection = null): Container {
+  public render(city: City, selection: EditorSelection = null, editable = false, zoom = 1): Container {
     const container = new Container();
     const nodes = new Map<string, RoadNode>(city.roadNodes.map((node) => [node.id, node]));
     const roads = new Map(city.roads.map((road) => [road.id, road]));
-    const selectedAnchor = selection?.kind === "road" ? selectedRoadEdge(city, selection) : undefined;
-    const selectedEdges = new Set(selectedAnchor ? roadIdentityGroupEdges(city, selectedAnchor).map((edge) => edge.id) : []);
+    const selectedAnchor = selection?.kind === "road" ? selectedRoadEdge(city, selection) : selection?.kind === "road-control" ? city.roadEdges.find((edge) => edge.id === selection.id) : selection?.kind === "road-multi" ? city.roadEdges.find((edge) => selection.edgeIds.includes(edge.id)) : undefined;
+    const selectedList = selection?.kind === "road" ? selectedRoadEdges(city, selection) : selection?.kind === "road-multi" ? city.roadEdges.filter((edge) => selection.edgeIds.includes(edge.id)) : selectedAnchor ? [selectedAnchor] : [];
+    const selectedEdgeIds = new Set(selectedList.map((edge) => edge.id));
 
     for (const structure of ["tunnel", "ground", "elevated"] as const) {
       const structureLayer = new Container();
@@ -50,13 +51,14 @@ export class RoadRenderer {
         const end = nodes.get(edge.endNodeId);
         if (!road || !start || !end) continue;
         const structureAlpha = structure === "tunnel" ? 0.52 : structure === "elevated" ? 0.9 : 1;
+        const cap = structure === "elevated" ? "butt" : "round";
         const border = new Graphics();
         drawPath(border, edge, start, end);
-        border.stroke({ color: structure === "elevated" ? 0x7f9097 : 0xaeb2b2, width: road.width + 5, cap: "round", join: "round", alpha: structureAlpha });
+        border.stroke({ color: structure === "elevated" ? 0x7f9097 : 0xaeb2b2, width: road.width + 5, cap, join: "round", alpha: structureAlpha });
         borders.addChild(border);
         const surface = new Graphics();
         drawPath(surface, edge, start, end);
-        surface.stroke({ color: subtypeColor[road.subtype], width: road.width, cap: "round", join: "round", alpha: structureAlpha });
+        surface.stroke({ color: subtypeColor[road.subtype], width: road.width, cap, join: "round", alpha: structureAlpha });
         surfaces.addChild(surface);
       }
       structureLayer.addChild(borders, surfaces);
@@ -68,25 +70,29 @@ export class RoadRenderer {
       const start = nodes.get(edge.startNodeId);
       const end = nodes.get(edge.endNodeId);
       if (!road || !start || !end) continue;
-      if (selection?.kind === "road" && (selectedEdges.size > 0 ? selectedEdges.has(edge.id) : selection.id === edge.roadId)) {
+      if ((selection?.kind === "road" || selection?.kind === "road-multi" || selection?.kind === "road-control") && selectedEdgeIds.has(edge.id)) {
         const selected = new Graphics(); drawPath(selected, edge, start, end);
         selected.stroke({ color: 0x168cff, width: Math.max(5, road.width * 0.24), alpha: 1, cap: "round" });
         container.addChild(selected);
       }
     }
 
-    if (selection) {
-      const visibleNodeIds = selection.kind === "node"
-        ? new Set([selection.id])
-        : new Set(selectedAnchor ? roadIdentityTerminalNodeIds(roadIdentityGroupEdges(city, selectedAnchor)) : []);
+    if (editable && selection) {
+      for (const edge of selectedList) {
+        const start = nodes.get(edge.startNodeId); const end = nodes.get(edge.endNodeId); if (!start || !end || edge.geometry.type === "line") continue;
+        const points = edge.geometry.type === "bezier" ? edge.geometry.controlPoints : edge.geometry.points; const guide = new Graphics();
+        if (edge.geometry.type === "bezier" && points.length > 1) guide.moveTo(start.x, start.y).lineTo(points[0]!.x, points[0]!.y).moveTo(end.x, end.y).lineTo(points[1]!.x, points[1]!.y);
+        else { guide.moveTo(start.x, start.y); for (const point of points) guide.lineTo(point.x, point.y); guide.lineTo(end.x, end.y); }
+        guide.stroke({ color: 0x168cff, width: 1.5 / zoom, alpha: 0.55 }); container.addChild(guide);
+        points.forEach((point, pointIndex) => { const active = selection.kind === "road-control" && selection.id === edge.id && selection.pointIndex === pointIndex; container.addChild(new Graphics().circle(point.x, point.y, (active ? 9 : 7) / zoom).fill({ color: 0xffffff, alpha: 0.12 }).stroke({ color: active ? 0xff9f43 : 0x168cff, width: (active ? 3 : 2.5) / zoom })); });
+      }
+      const visibleNodeIds = selection.kind === "node" ? new Set([selection.id]) : new Set([...selectedList.flatMap((edge) => [edge.startNodeId, edge.endNodeId]), ...(selection.kind === "road-multi" ? selection.nodeIds : [])]);
       for (const node of city.roadNodes) {
         if (!visibleNodeIds.has(node.id)) continue;
-        const connectedEdge = (selectedAnchor && roadIdentityGroupEdges(city, selectedAnchor).find((edge) => edge.startNodeId === node.id || edge.endNodeId === node.id)) || city.roadEdges.find((edge) => edge.startNodeId === node.id || edge.endNodeId === node.id);
+        const connectedEdge = selectedList.find((edge) => edge.startNodeId === node.id || edge.endNodeId === node.id) || city.roadEdges.find((edge) => edge.startNodeId === node.id || edge.endNodeId === node.id);
         const connectedWidth = roads.get(connectedEdge?.roadId ?? "")?.width ?? 12;
-        const selectedRoad = selection.kind === "road";
-        const radius = selectedRoad ? Math.max(10, connectedWidth * 0.48) : 9;
-        const handle = new Graphics().circle(node.x, node.y, radius).fill({ color: selectedRoad ? 0x168cff : 0xffffff }).stroke({ color: selectedRoad ? 0xffffff : 0x168cff, width: 3 });
-        if (selectedRoad) handle.circle(node.x, node.y, Math.max(3, radius * 0.34)).fill({ color: 0xffffff });
+        const active = selection.kind === "node" && selection.id === node.id || selection.kind === "road-multi" && selection.nodeIds.includes(node.id); const radius = Math.max(7, Math.min(10, connectedWidth * 0.48)) / zoom;
+        const handle = new Graphics().circle(node.x, node.y, radius).fill({ color: active ? 0xff9f43 : 0x168cff }).stroke({ color: 0xffffff, width: 2.5 / zoom });
         container.addChild(handle);
       }
     }

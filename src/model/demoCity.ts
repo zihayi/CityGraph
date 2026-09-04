@@ -214,6 +214,7 @@ export function createDemoCity(): City {
     roads: [...roads],
     roadEdges: [...roadEdges],
     zones: [],
+    universities: [],
     buildings: createBuildings(),
     blocks: createBlocks(),
     parks: [

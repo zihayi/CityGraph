@@ -44,6 +44,23 @@ function replaceSegment(roads: Road[], roadId: string, segmentId: string, replac
 function pathGeometry(points: Point[]): RoadGeometry {
   return points.length <= 2 ? { type: "line" } : { type: "polyline", points: points.slice(1, -1).map((point) => ({ x: point.x, y: point.y })) };
 }
+function interpolate(a: Point, b: Point, t: number): Point { return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }; }
+function splitBezier(start: Point, end: Point, controls: Point[], t: number): { point: Point; before: RoadGeometry; after: RoadGeometry } {
+  const first = controls[0]; const second = controls[1]; if (!first) return { point: interpolate(start, end, t), before: { type: "line" }, after: { type: "line" } };
+  if (!second) { const a = interpolate(start, first, t); const b = interpolate(first, end, t); return { point: interpolate(a, b, t), before: { type: "bezier", controlPoints: [a] }, after: { type: "bezier", controlPoints: [b] } }; }
+  const a = interpolate(start, first, t); const b = interpolate(first, second, t); const c = interpolate(second, end, t); const d = interpolate(a, b, t); const e = interpolate(b, c, t); return { point: interpolate(d, e, t), before: { type: "bezier", controlPoints: [a, d] }, after: { type: "bezier", controlPoints: [e, c] } };
+}
+function subpathGeometry(geometry: RoadGeometry, start: Point, end: Point, sampledPath: Point[], startT: number, endT: number): RoadGeometry {
+  if (geometry.type === "line") return { type: "line" }; if (geometry.type === "polyline") return pathGeometry(sampledSubpath(sampledPath, startT, endT));
+  const endSplit = splitBezier(start, end, geometry.controlPoints, endT); if (startT <= 1e-9) return endSplit.before; const startSplit = splitBezier(start, endSplit.point, endSplit.before.type === "bezier" ? endSplit.before.controlPoints : [], startT / endT); return startSplit.after;
+}
+function splitGeometry(edge: RoadEdge, nodes: Map<string, RoadNode>, point: Point): [RoadGeometry, RoadGeometry] {
+  const start = nodes.get(edge.startNodeId); const end = nodes.get(edge.endNodeId); if (!start || !end || edge.geometry.type === "line") return [{ type: "line" }, { type: "line" }];
+  const path = sampleRoad(edge, nodes, 64); let segmentIndex = 1; let segmentRatio = 0; let nearest = Number.POSITIVE_INFINITY;
+  for (let index = 1; index < path.length; index += 1) { const a = path[index - 1]!; const b = path[index]!; const dx = b.x - a.x; const dy = b.y - a.y; const lengthSquared = dx * dx + dy * dy; const ratio = lengthSquared ? Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared)) : 0; const candidate = distance(point, interpolate(a, b, ratio)); if (candidate < nearest) { nearest = candidate; segmentIndex = index; segmentRatio = ratio; } }
+  if (edge.geometry.type === "polyline") { const split = segmentIndex - 1; const before = edge.geometry.points.slice(0, split); const after = edge.geometry.points.slice(split); return [before.length ? { type: "polyline", points: before } : { type: "line" }, after.length ? { type: "polyline", points: after } : { type: "line" }]; }
+  const split = splitBezier(start, end, edge.geometry.controlPoints, Math.max(0, Math.min(1, (segmentIndex - 1 + segmentRatio) / 64))); return [split.before, split.after];
+}
 function sampledSubpath(path: Point[], startT: number, endT: number): Point[] {
   if (path.length < 2) return path;
   const max = path.length - 1; const startPosition = startT * max; const endPosition = endT * max;
@@ -103,23 +120,12 @@ function splitEdgeInSnapshot(snapshot: RoadSnapshot, edgeId: string, point: Poin
   if (!start || !end) throw new Error("Road edge endpoints not found");
   if (distance(start, point) < 1e-4) return start.id;
   if (distance(end, point) < 1e-4) return end.id;
-  const fullPath = sampleRoad(edge, nodes, 48);
-  let splitIndex = 1; let nearest = Number.POSITIVE_INFINITY;
-  for (let index = 1; index < fullPath.length; index += 1) {
-    const a = fullPath[index - 1]; const b = fullPath[index];
-    if (!a || !b) continue;
-    const dx = b.x - a.x; const dy = b.y - a.y; const lengthSquared = dx * dx + dy * dy;
-    const ratio = lengthSquared ? Math.max(0, Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / lengthSquared)) : 0;
-    const projected = { x: a.x + dx * ratio, y: a.y + dy * ratio }; const candidate = distance(point, projected);
-    if (candidate < nearest) { nearest = candidate; splitIndex = index; }
-  }
   const node = existingNodeId ? snapshot.roadNodes.find((candidate) => candidate.id === existingNodeId) : undefined;
   const splitNode: RoadNode = node ?? { id: id("node"), x: point.x, y: point.y };
   if (!node) snapshot.roadNodes.push(splitNode);
-  const beforePath = [...fullPath.slice(0, splitIndex), point];
-  const afterPath = [point, ...fullPath.slice(splitIndex)];
-  const first: RoadEdge = { ...edge, id: id("edge"), endNodeId: splitNode.id, geometry: pathGeometry(beforePath) };
-  const second: RoadEdge = { ...edge, id: id("edge"), startNodeId: splitNode.id, geometry: pathGeometry(afterPath) };
+  const [firstGeometry, secondGeometry] = splitGeometry(edge, nodes, point);
+  const first: RoadEdge = { ...edge, id: id("edge"), endNodeId: splitNode.id, geometry: firstGeometry };
+  const second: RoadEdge = { ...edge, id: id("edge"), startNodeId: splitNode.id, geometry: secondGeometry };
   snapshot.roadEdges.splice(edgeIndex, 1, first, second);
   replaceSegment(snapshot.roads, edge.roadId, edge.id, [first.id, second.id]);
   return splitNode.id;
@@ -205,7 +211,7 @@ export function buildRoadCreation(city: City, input: RoadCreationInput): RoadGra
       id: id("edge"), roadId: road.id, startNodeId: from.id, endNodeId: to.id,
       name: input.name,
       structure: input.structure, level: input.structure === "elevated" ? 1 : input.structure === "tunnel" ? -1 : 0,
-      geometry: pathNodes.length === 2 ? cloneGeometry(input.geometry) : pathGeometry(sampledSubpath(inputPath, pathNodes[index - 1]!.t, pathNodes[index]!.t)),
+      geometry: pathNodes.length === 2 ? cloneGeometry(input.geometry) : subpathGeometry(input.geometry, start, end, inputPath, pathNodes[index - 1]!.t, pathNodes[index]!.t),
     };
     snapshot.roadEdges.push(edge); segmentIds.push(edge.id);
   }

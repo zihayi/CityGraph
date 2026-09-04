@@ -13,11 +13,13 @@ import { SettingsDialog } from "../ui/Dialogs/SettingsDialog";
 import { RightPanel } from "../ui/RightPanel/RightPanel";
 import { TopBar } from "../ui/TopBar/TopBar";
 import { LaunchScreen } from "../ui/LaunchScreen/LaunchScreen";
-import { useEditorStore } from "./store/editorStore";
+import { useEditorStore, type BlockRoadSubtype, type EditorTool } from "./store/editorStore";
 import { useTranslation } from "./useTranslation";
 import { soundManager } from "../services/SoundManager";
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import type { ValidationKey } from "../map/MapViewport";
+import { defaultZoneColors, defaultZoneIconColors, defaultZoneIcons } from "../model/ZoneStyle";
 
 type Dialog = "new" | "saveAs" | "settings" | null;
 
@@ -30,9 +32,11 @@ function playControlClick(target: EventTarget | null) {
 export function App() {
   const [editor] = useState(() => new Editor(createDemoCity())); const [saveManager] = useState(() => new SaveManager());
   const [revision, setRevision] = useState(0); const [dialog, setDialog] = useState<Dialog>(null); const [status, setStatus] = useState("");
-  const [validation, setValidation] = useState<"road.invalid.water" | "road.invalid.short" | "zone.noRoadArea" | "building.invalid" | "facility.invalid.building" | undefined>(); const mapRef = useRef<MapCanvasHandle>(null); const t = useTranslation();
+  const [validation, setValidation] = useState<ValidationKey | undefined>(); const mapRef = useRef<MapCanvasHandle>(null); const t = useTranslation();
   const [fullscreen, setFullscreen] = useState(false);
   const [launchComplete, setLaunchComplete] = useState(false);
+  const [eyedropperActive, setEyedropperActive] = useState(false);
+  const eyedropperReturnTool = useRef<EditorTool>("select");
   const store = useEditorStore();
   useEffect(() => editor.subscribe(() => setRevision((value) => value + 1)), [editor]);
   useEffect(() => { document.documentElement.style.setProperty("--ui-opacity", String(store.uiOpacity)); }, [store.uiOpacity]);
@@ -57,17 +61,23 @@ export function App() {
   const load = async () => {
     try { const loaded = await saveManager.load(); editor.replaceCity(loaded.city); requestAnimationFrame(() => mapRef.current?.setCameraState(loaded.camera)); showStatus(t("save.loaded", { name: loaded.saveName })); } catch (error) { showStatus(errorMessage(error)); }
   };
+  const setTool = (tool: EditorTool) => { if (tool !== "eyedropper") setEyedropperActive(false); store.setCurrentTool(tool); };
+  const toggleEyedropper = () => { if (eyedropperActive) { setEyedropperActive(false); store.setCurrentTool(eyedropperReturnTool.current); return; } eyedropperReturnTool.current = store.currentTool === "eyedropper" ? "select" : store.currentTool; setEyedropperActive(true); store.setCurrentTool("eyedropper"); };
+  const finishEyedropper = (subtype?: BlockRoadSubtype) => { if (subtype) { store.setRoadSubtype(subtype); store.setBlockRoadSubtype(subtype); } setEyedropperActive(false); store.setCurrentTool(eyedropperReturnTool.current); };
   const create = (options: NewMapOptions) => { editor.replaceCity(createNewCity(options)); saveManager.reset(); setDialog(null); showStatus(t("status.ready")); };
   const road = { mode: store.roadMode, shape: store.roadShape, subtype: store.roadSubtype, width: store.roadWidth, structure: store.roadStructure, align: store.roadAlign, angleEnabled: store.roadAngleEnabled, angle: store.roadAngle, gridSnap: store.roadGridSnap, gridSize: store.roadGridSize, polygonSides: store.roadPolygonSides, parallelOffset: store.roadParallelOffset } as const;
-  const zone = { mode: store.zoneMode, type: store.zoneType, color: store.zoneColor, icon: store.zoneIcon, iconColor: store.zoneIconColor, iconOpacity: store.zoneIconOpacity, layerOpacity: store.zoningOpacity } as const;
-  const building = { mode: store.buildingMode, preset: store.buildingPreset, type: store.buildingType, subtype: store.buildingSubtype, style: store.buildingStyle, floors: store.buildingFloors, height: store.buildingHeight, width: store.buildingWidth, depth: store.buildingDepth, snapToRoad: store.buildingSnapToRoad, setback: store.buildingSetback, extrude: store.buildingExtrude } as const;
-  const bus = { mode: store.transitMode, lineColor: store.transitLineColor } as const;
+  const zone = store.currentTool === "university" ? { mode: store.universityMode === "edit" ? "edit" as const : store.zoneMode === "road-fill" ? "road-fill" as const : "custom" as const, type: "education" as const, color: store.zoneColors.education ?? defaultZoneColors.education, icon: defaultZoneIcons.education, iconColor: defaultZoneIconColors.education, iconOpacity: 1, layerOpacity: store.zoningOpacity } : { mode: store.zoneMode, type: store.zoneType, color: store.zoneColor, icon: store.zoneIcon, iconColor: store.zoneIconColor, iconOpacity: store.zoneIconOpacity, layerOpacity: store.zoningOpacity };
+  const building = { mode: store.buildingMode, preset: store.buildingPreset, type: store.buildingType, subtype: store.buildingSubtype, style: store.buildingStyle, floors: store.buildingFloors, height: store.buildingHeight, width: store.buildingWidth, depth: store.buildingDepth, snapToRoad: store.buildingSnapToRoad, setback: store.buildingSetback, extrude: store.buildingExtrude, edgeStyle: store.buildingEdgeStyle } as const;
+  const water = { mode: store.waterMode, edgeStyle: store.waterEdgeStyle } as const;
+  const block = { rows: store.blockRows, columns: store.blockColumns, roadSubtype: store.blockRoadSubtype } as const;
+  const university = { mode: store.universityMode } as const;
+  const bus = { system: store.transportSystem, mode: store.transitMode, lineColor: store.transitLineColor } as const;
   const city = editor.state.city;
 
   return <div className="app-shell" data-revision={revision} data-toolbar-collapsed={store.toolbarCollapsed} onPointerDownCapture={(event) => { if (event.button === 0) playControlClick(event.target); }} onClickCapture={(event) => { if (event.detail === 0) playControlClick(event.target); }}>
-    <TopBar cityName={city.name} canUndo={editor.commands.canUndo} canRedo={editor.commands.canRedo} t={t} onUndo={() => editor.undo()} onRedo={() => editor.redo()} onSave={() => void save()} onSettings={() => setDialog("settings")}/>
-    <div className="workspace"><LeftToolbar currentTool={store.currentTool} collapsed={store.toolbarCollapsed} onToolChange={store.setCurrentTool} onToggleCollapsed={store.toggleToolbarCollapsed} t={t}/><MapWorkspace editor={editor} layers={store.layers} tool={store.currentTool} road={road} zone={zone} building={building} bus={bus} shortcuts={store.shortcuts} inputEnabled={dialog === null} mapRef={mapRef} onZoomChange={store.setZoomPercent} validation={validation} onValidation={setValidation} t={t}/><RightPanel editor={editor} tool={store.currentTool} visibility={store.layers} zoningOpacity={store.zoningOpacity} onZoningOpacity={store.setZoningOpacity} onToggleLayer={store.toggleLayer} t={t}/></div>
-    {dialog === "new" && <NewMapDialog t={t} onCreate={create} onCancel={() => setDialog(null)}/>} {dialog === "saveAs" && <SaveDialog defaultName={city.name} t={t} onSave={(name) => void saveAs(name)} onCancel={() => setDialog(null)}/>} {dialog === "settings" && <SettingsDialog opacity={store.uiOpacity} locale={store.locale} shortcuts={store.shortcuts} musicEnabled={store.musicEnabled} musicVolume={store.musicVolume} autoSaveEnabled={store.autoSaveEnabled} autoSaveIntervalMinutes={store.autoSaveIntervalMinutes} autoSaveSlots={store.autoSaveSlots} autoSaveRetentionDays={store.autoSaveRetentionDays} fullscreen={fullscreen} t={t} onOpacity={store.setUiOpacity} onLocale={store.setLocale} onShortcut={store.setShortcut} onResetShortcuts={store.resetShortcuts} onMusicEnabled={store.setMusicEnabled} onMusicVolume={store.setMusicVolume} onAutoSaveEnabled={store.setAutoSaveEnabled} onAutoSaveIntervalMinutes={store.setAutoSaveIntervalMinutes} onAutoSaveSlots={store.setAutoSaveSlots} onAutoSaveRetentionDays={store.setAutoSaveRetentionDays} onFullscreen={(enabled) => void changeFullscreen(enabled)} onNew={() => setDialog("new")} onSave={() => { setDialog(null); void save(); }} onSaveAs={() => setDialog("saveAs")} onLoad={() => { setDialog(null); void load(); }} onClose={() => setDialog(null)}/>} {status && <div className="status-toast">{status}</div>}
+     <TopBar cityName={city.name} canUndo={editor.commands.canUndo} canRedo={editor.commands.canRedo} eyedropperActive={eyedropperActive} onEyedropper={toggleEyedropper} t={t} onUndo={() => editor.undo()} onRedo={() => editor.redo()} onSave={() => void save()} onSettings={() => setDialog("settings")} onCityNameChange={(name) => editor.renameCity(name)}/>
+     <div className="workspace"><LeftToolbar currentTool={store.currentTool} collapsed={store.toolbarCollapsed} onToolChange={setTool} onToggleCollapsed={store.toggleToolbarCollapsed} t={t}/><MapWorkspace editor={editor} layers={store.layers} tool={store.currentTool} road={road} zone={zone} building={building} water={water} block={block} university={university} bus={bus} shortcuts={store.shortcuts} inputEnabled={dialog === null} mapRef={mapRef} onZoomChange={store.setZoomPercent} validation={validation} onValidation={setValidation} onEyedropper={finishEyedropper} t={t}/><RightPanel editor={editor} tool={store.currentTool} visibility={store.layers} zoningOpacity={store.zoningOpacity} onZoningOpacity={store.setZoningOpacity} onToggleLayer={store.toggleLayer} t={t}/></div>
+    {dialog === "new" && <NewMapDialog t={t} onCreate={create} onCancel={() => setDialog(null)}/>} {dialog === "saveAs" && <SaveDialog defaultName={city.name} t={t} onSave={(name) => void saveAs(name)} onCancel={() => setDialog(null)}/>} {dialog === "settings" && <SettingsDialog opacity={store.uiOpacity} locale={store.locale} shortcuts={store.shortcuts} musicEnabled={store.musicEnabled} musicVolume={store.musicVolume} autoSaveEnabled={store.autoSaveEnabled} autoSaveIntervalMinutes={store.autoSaveIntervalMinutes} autoSaveSlots={store.autoSaveSlots} autoSaveRetentionDays={store.autoSaveRetentionDays} fullscreen={fullscreen} mapSize={city.mapSize} t={t} onOpacity={store.setUiOpacity} onLocale={store.setLocale} onShortcut={store.setShortcut} onResetShortcuts={store.resetShortcuts} onMusicEnabled={store.setMusicEnabled} onMusicVolume={store.setMusicVolume} onAutoSaveEnabled={store.setAutoSaveEnabled} onAutoSaveIntervalMinutes={store.setAutoSaveIntervalMinutes} onAutoSaveSlots={store.setAutoSaveSlots} onAutoSaveRetentionDays={store.setAutoSaveRetentionDays} onFullscreen={(enabled) => void changeFullscreen(enabled)} onUnlimitedCanvas={() => editor.enableUnlimitedCanvas()} onNew={() => setDialog("new")} onSave={() => { setDialog(null); void save(); }} onSaveAs={() => setDialog("saveAs")} onLoad={() => { setDialog(null); void load(); }} onClose={() => setDialog(null)}/>} {status && <div className="status-toast">{status}</div>}
     <LaunchScreen onComplete={() => setLaunchComplete(true)}/>
   </div>;
 }

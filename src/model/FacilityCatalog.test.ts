@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { facilityCatalog, facilityTypeName } from "./FacilityCatalog";
+import { facilityCatalog, facilityTypeName, universityFacilityCatalog } from "./FacilityCatalog";
 import { facilityDefaultColor } from "./City";
 
 describe("facility catalog", () => {
   it("includes uploaded facility icons with localized names", () => {
     expect(facilityCatalog.find((entry) => entry.type === "company")?.icon).toBe("company.svg");
     expect(facilityCatalog.find((entry) => entry.type === "lab")?.icon).toBe("lab.svg");
+    expect(facilityCatalog.find((entry) => entry.type === "theater")?.icon).toBe("theater.svg");
+    expect(facilityCatalog.find((entry) => entry.type === "experience-hall")?.icon).toBe("experience-hall.svg");
     expect(facilityTypeName("company", "zh-CN")).toBe("公司");
     expect(facilityTypeName("lab", "zh-CN")).toBe("实验室");
+    expect(facilityTypeName("theater", "zh-CN")).toBe("剧院");
+    expect(facilityTypeName("experience-hall", "zh-CN")).toBe("体验馆");
   });
 
   it("uses the current city palette as each facility type default", () => {
@@ -18,5 +22,10 @@ describe("facility catalog", () => {
     };
     for (const [type, color] of Object.entries(expected)) expect(facilityDefaultColor(type)).toBe(color);
     expect(facilityCatalog.every((entry) => entry.color === facilityDefaultColor(entry.type))).toBe(true);
+  });
+
+  it("loads every university facility icon in the requested order", () => {
+    expect(universityFacilityCatalog.map((entry) => entry.type)).toEqual(["college", "laboratory", "library", "dormitory", "canteen", "administration", "student-center", "campus-clinic", "gymnasium"]);
+    expect(facilityTypeName("student-center", "zh-CN")).toBe("学生活动中心");
   });
 });

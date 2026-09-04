@@ -3,6 +3,7 @@ import type { Point } from "./Point";
 import { distancePointToSegment, segmentIntersection } from "./Segment";
 
 const DEFAULT_EPSILON = 1e-9;
+export type PolygonEdgeStyle = "straight" | "smooth";
 
 export interface PointInPolygonOptions {
   includeBoundary?: boolean;
@@ -121,4 +122,13 @@ export function smoothClosedPolygon(
   }
 
   return smoothed;
+}
+
+export function applyPolygonEdgeStyle(
+  polygon: readonly Point[],
+  edgeStyle: PolygonEdgeStyle,
+): Point[] {
+  return edgeStyle === "smooth" && polygon.length >= 3
+    ? smoothClosedPolygon(polygon, 1)
+    : polygon.map((point) => ({ ...point }));
 }

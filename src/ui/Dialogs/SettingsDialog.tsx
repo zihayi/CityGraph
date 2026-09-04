@@ -1,8 +1,9 @@
-import { CalendarDays, Clock3, Database, FolderOpen, Languages, Maximize2, Music2, Plus, Save, SaveAll, Sparkles, Volume2 } from "lucide-react";
+import { CalendarDays, Clock3, Database, FolderOpen, Languages, Map, Maximize2, Music2, Plus, Save, SaveAll, Sparkles, Volume2 } from "lucide-react";
 import type { Locale, TranslationKey } from "../../i18n";
 import { localeLabels } from "../../i18n";
 import { soundManager } from "../../services/SoundManager";
 import type { KeyboardShortcuts, ShortcutAction } from "../../app/store/editorStore";
+import type { MapSize } from "../../model/City";
 
 const shortcutKeys: Record<ShortcutAction, TranslationKey> = { panUp: "shortcut.panUp", panLeft: "shortcut.panLeft", panDown: "shortcut.panDown", panRight: "shortcut.panRight", rotateLeft: "shortcut.rotateLeft", rotateRight: "shortcut.rotateRight" };
 
@@ -17,6 +18,7 @@ interface Props {
   autoSaveSlots: number;
   autoSaveRetentionDays: number;
   fullscreen: boolean;
+  mapSize: MapSize;
   t: (key: TranslationKey) => string;
   onOpacity: (opacity: number) => void;
   onLocale: (locale: Locale) => void;
@@ -29,6 +31,7 @@ interface Props {
   onAutoSaveSlots: (slots: number) => void;
   onAutoSaveRetentionDays: (days: number) => void;
   onFullscreen: (fullscreen: boolean) => void;
+  onUnlimitedCanvas: () => void;
   onNew: () => void;
   onSave: () => void;
   onSaveAs: () => void;
@@ -47,6 +50,7 @@ export function SettingsDialog(props: Props) {
         <button type="button" data-action="save-as" onClick={action(props.onSaveAs)}><SaveAll size={18}/><span>{props.t("common.saveAs")}</span></button>
         <button type="button" data-action="load" onClick={action(props.onLoad)}><FolderOpen size={18}/><span>{props.t("common.load")}</span></button>
       </div></section>
+      <section className="settings-section settings-canvas"><h3>{props.t("settings.canvas")}</h3><div><span><Map size={19}/><span><strong>{props.t("settings.currentCanvas")}</strong><small>{props.t(props.mapSize === "unlimited" ? "new.unlimited" : props.mapSize === "large" ? "new.large" : props.mapSize === "medium" ? "new.medium" : "new.small")}</small></span></span><button type="button" disabled={props.mapSize === "unlimited"} onClick={action(props.onUnlimitedCanvas)}>{props.t(props.mapSize === "unlimited" ? "settings.unlimitedActive" : "settings.switchUnlimited")}</button></div><p>{props.t("settings.canvasHint")}</p></section>
       <section className="settings-section settings-autosave"><div className="settings-autosave-head"><span><Database size={18}/><span><strong>{props.t("settings.autosave")}</strong><small>{props.t("settings.autosaveHint")}</small></span></span><label className="settings-switch"><input type="checkbox" checked={props.autoSaveEnabled} onChange={(event) => props.onAutoSaveEnabled(event.target.checked)}/><span/></label></div>
         <div className="settings-number-grid" aria-disabled={!props.autoSaveEnabled}>
           <label><span><Clock3 size={15}/>{props.t("settings.autosaveInterval")}</span><div><input type="number" min="1" max="120" value={props.autoSaveIntervalMinutes} disabled={!props.autoSaveEnabled} onChange={(event) => props.onAutoSaveIntervalMinutes(Number(event.target.value) || 1)}/><small>{props.t("settings.minutes")}</small></div></label>

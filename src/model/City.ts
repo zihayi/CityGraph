@@ -85,6 +85,52 @@ export interface Block {
 }
 
 export type ZoneSource = "custom" | "road-fill";
+export type EducationLevel = "kindergarten" | "primary" | "middle" | "high" | "vocational" | "college" | "university" | "special" | "other";
+
+export interface UniversityProfile {
+  englishName: string;
+  emblemDataUrl: string;
+  motto: string;
+  foundedYear: number | null;
+  universityType: string;
+  alumniCompanies: string[];
+  colleges: string[];
+  laboratories: string[];
+}
+
+export function createEmptyUniversityProfile(): UniversityProfile {
+  return { englishName: "", emblemDataUrl: "", motto: "", foundedYear: null, universityType: "", alumniCompanies: [], colleges: [], laboratories: [] };
+}
+
+export type UniversityType = "comprehensive" | "science-engineering" | "medical" | "finance" | "agriculture-forestry" | "arts" | "other";
+
+export interface AlumniCompany {
+  id: string;
+  name: string;
+  logo: string;
+  notes: string;
+}
+
+export interface University {
+  id: string;
+  name: string;
+  englishName: string;
+  shortName: string;
+  ranking: number | null;
+  foundedYear: number | null;
+  type: UniversityType;
+  customType?: string;
+  description: string;
+  motto: string;
+  tags: string[];
+  logo: string;
+  alumniCompanies: AlumniCompany[];
+  landArea?: number;
+}
+
+export function createEmptyUniversity(id: string): University {
+  return { id, name: "", englishName: "", shortName: "", ranking: null, foundedYear: null, type: "comprehensive", description: "", motto: "", tags: [], logo: "", alumniCompanies: [] };
+}
 
 export interface Zone {
   id: string;
@@ -98,6 +144,14 @@ export interface Zone {
   iconColor?: string;
   iconOpacity?: number;
   description?: string;
+  purpose?: "university";
+  university?: UniversityProfile;
+  universityId?: string;
+  campusRole?: "main" | "branch";
+  address?: string;
+  areaOverride?: number;
+  educationLevel?: EducationLevel;
+  affiliatedUniversityId?: string;
 }
 
 export interface Park {
@@ -125,26 +179,49 @@ export interface FacilityPOI {
   position: Point;
   icon: string;
   color: string;
+  universityZoneId?: string;
+  affiliatedUniversityId?: string;
+  universityAffiliationKind?: "hospital" | "facility";
 }
 
 export const defaultFacilityColor = "#2d9f9b";
 
 export const defaultFacilityColors: Record<string, string> = {
+  administration: "#647b9b",
   bakery: "#ab8f03",
   bar: "#dcb7d4",
   bookstore: "#9f702d",
   "bubble-tea": "#099584",
   "coffee-shop": "#98502a",
   company: "#4776a8",
+  college: "#668fa3",
+  dormitory: "#8c75a5",
   "gas-station": "#cb102c",
   habor: "#0078c2",
   hotel: "#7749bc",
+  gymnasium: "#4f9278",
+  laboratory: "#6a55a3",
+  library: "#9f702d",
   lab: "#6a55a3",
   parking: "#5389d0",
   "pet-shop": "#c4b464",
   restaurant: "#f09833",
+  canteen: "#c77942",
+  "campus-clinic": "#ad747a",
+  "student-center": "#3d8f9a",
   store: "#5f68dd",
   supermarket: "#2d9f9b",
+  theater: "#9b5ca5",
+  cinema: "#8056a8",
+  museum: "#9a7445",
+  hospital: "#c45562",
+  pharmacy: "#3d9b76",
+  bank: "#567da8",
+  "police-station": "#4c70a8",
+  "fire-station": "#c85a3e",
+  "post-office": "#b58a35",
+  "community-center": "#4f8f91",
+  "experience-hall": "#a1668b",
 };
 
 export function facilityDefaultColor(type: string): string {
@@ -173,6 +250,8 @@ export interface BusTerminal {
 export interface BusPathStep {
   roadEdgeId: string;
   forward: boolean;
+  startFraction?: number;
+  endFraction?: number;
 }
 
 export type BusLineDirection = "start-to-end";
@@ -181,8 +260,9 @@ export interface BusLine {
   id: string;
   name: string;
   color: string;
-  startTerminalId: string;
-  endTerminalId: string;
+  loop: boolean;
+  startTerminalId?: string;
+  endTerminalId?: string;
   path: BusPathStep[];
   direction: BusLineDirection;
   stopIds: string[];
@@ -218,6 +298,7 @@ export interface City {
   buildings: Building[];
   blocks: Block[];
   zones: Zone[];
+  universities: University[];
   parks: Park[];
   waters: WaterArea[];
   pois: POI[];

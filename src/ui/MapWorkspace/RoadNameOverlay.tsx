@@ -1,7 +1,7 @@
-import { sampleLogicalRoad } from "../../geometry/RoadGeometry";
+import { roadDistance, sampleLogicalRoad } from "../../geometry/RoadGeometry";
 import type { Point } from "../../geometry/Point";
 import type { CameraState } from "../../map/MapViewport";
-import type { City } from "../../model/City";
+import type { City, RoadEdge } from "../../model/City";
 import { connectedRoadEdgeComponents } from "../../editor/RoadIdentity";
 
 function toScreen(point: Point, camera: CameraState): Point {
@@ -13,13 +13,13 @@ function toScreen(point: Point, camera: CameraState): Point {
   };
 }
 
-export function RoadNameOverlay({ city, camera }: { city: City; camera: CameraState }) {
+export function RoadNameOverlay({ city, camera, interactive = false, onSelect, onContextMenu, onWheel }: { city: City; camera: CameraState; interactive?: boolean; onSelect?: (edge: RoadEdge, additive: boolean) => void; onContextMenu?: (edge: RoadEdge, point: Point, screen: Point) => void; onWheel?: (deltaY: number) => void }) {
   const nodes = new Map(city.roadNodes.map((node) => [node.id, node]));
   const edges = new Map(city.roadEdges.map((edge) => [edge.id, edge]));
   const namedGroups = new Map<string, typeof city.roadEdges>();
   for (const edge of city.roadEdges) if (edge.name.trim()) namedGroups.set(edge.name, [...namedGroups.get(edge.name) ?? [], edge]);
   const labels = [...namedGroups].flatMap(([name, groupEdges]) => connectedRoadEdgeComponents(groupEdges).map((component, componentIndex) => ({ name, component, componentIndex })));
-  return <svg className="road-name-overlay" aria-hidden="true">{labels.map(({ name, component, componentIndex }) => {
+  return <svg className={`road-name-overlay${interactive ? " is-interactive" : ""}`} aria-hidden={!interactive}>{labels.map(({ name, component, componentIndex }) => {
     const owningRoad = city.roads.find((road) => road.id === component[0]?.roadId); if (!owningRoad) return null;
     const points = sampleLogicalRoad({ ...owningRoad, segmentIds: component.map((edge) => edge.id) }, edges, nodes);
     if (points.length < 2 || owningRoad.width * camera.zoom < 1.5) return null;
@@ -38,6 +38,7 @@ export function RoadNameOverlay({ city, camera }: { city: City; camera: CameraSt
     if (angle > 90) angle -= 180;
     if (angle < -90) angle += 180;
     const fontSize = Math.max(10, Math.min(22, owningRoad.width * camera.zoom * 0.62));
-    return <text key={`${name}-${componentIndex}`} x={screenMidpoint.x} y={screenMidpoint.y} transform={`rotate(${angle} ${screenMidpoint.x} ${screenMidpoint.y})`} fontSize={fontSize} strokeWidth={Math.max(2.2, fontSize * 0.2)}>{name}</text>;
+    const anchor = component.map((edge) => ({ edge, distance: roadDistance(midpoint, edge, nodes) })).sort((left, right) => left.distance - right.distance)[0]?.edge ?? component[0];
+    return <text key={`${name}-${componentIndex}`} x={screenMidpoint.x} y={screenMidpoint.y} transform={`rotate(${angle} ${screenMidpoint.x} ${screenMidpoint.y})`} fontSize={fontSize} strokeWidth={Math.max(2.2, fontSize * 0.2)} onPointerDown={(event) => { if (!interactive || event.button !== 0 || !anchor) return; event.preventDefault(); event.stopPropagation(); onSelect?.(anchor, event.shiftKey); }} onContextMenu={(event) => { if (!interactive || !anchor) return; event.preventDefault(); event.stopPropagation(); onContextMenu?.(anchor, midpoint, screenMidpoint); }} onWheel={(event) => { if (!interactive) return; event.preventDefault(); event.stopPropagation(); onWheel?.(event.deltaY); }}>{name}</text>;
   })}</svg>;
 }

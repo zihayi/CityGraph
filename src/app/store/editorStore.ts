@@ -4,9 +4,11 @@ import type { BuildingStyle, BuildingType, RoadStructure, RoadSubtype, ZoneType 
 import type { BuildingPreset } from "../../geometry/BuildingGeometry";
 import { defaultZoneColors, defaultZoneIconColors, defaultZoneIcons } from "../../model/ZoneStyle";
 import { gridSnapLayers } from "./gridSnap";
+import type { PolygonEdgeStyle } from "../../geometry/Polygon";
 
 export type EditorTool =
   | "select"
+  | "pan"
   | "roads"
   | "blocks"
   | "buildings"
@@ -15,7 +17,9 @@ export type EditorTool =
   | "public"
   | "parks"
   | "water"
-  | "labels";
+  | "labels"
+  | "university"
+  | "eyedropper";
 
 export type LayerId =
   | "baseMap"
@@ -31,9 +35,15 @@ export type LayerId =
   | "grid";
 
 export type LayerVisibility = Record<LayerId, boolean>;
-export type RoadShape = "draw" | "parallel" | "circle" | "polygon";
-export type BuildingMode = "preset" | "free" | "edit";
-export type TransitMode = "terminal" | "line" | "stop" | "edit";
+export type RoadShape = "draw" | "parallel" | "circle" | "polygon" | "edit";
+export type BuildingMode = "preset" | "diagonal" | "free" | "edit";
+export type WaterMode = "free" | "rectangle" | "edit";
+export type BlockRoadSubtype = RoadSubtype;
+export type { PolygonEdgeStyle };
+export type TransitMode = "create" | "edit";
+export type TransportSystem = "bus" | "metro" | "airplane" | "ferry";
+export type UniversityAffiliationKind = "school" | "hospital" | "facility";
+export interface UniversityAffiliationPick { universityId: string; campusId: string; kind: UniversityAffiliationKind }
 export type ShortcutAction = "panUp" | "panLeft" | "panDown" | "panRight" | "rotateLeft" | "rotateRight";
 export type KeyboardShortcuts = Record<ShortcutAction, string>;
 
@@ -43,6 +53,24 @@ const savedShortcuts = (() => {
   catch { return defaultKeyboardShortcuts; }
 })();
 const storedMusicVolume = Number(localStorage.getItem("citygraph:music-volume") ?? "0.28");
+const savedFacilityColors: Record<string, string> = (() => {
+  try {
+    const stored = JSON.parse(localStorage.getItem("citygraph:facility-colors") ?? "{}");
+    if (!stored || typeof stored !== "object" || Array.isArray(stored)) return {};
+    return Object.fromEntries(Object.entries(stored).filter(([, color]) => typeof color === "string" && /^#[0-9a-f]{6}$/i.test(color))) as Record<string, string>;
+  } catch {
+    return {};
+  }
+})();
+const savedZoneColors: Record<string, string> = (() => {
+  try {
+    const stored = JSON.parse(localStorage.getItem("citygraph:zone-colors") ?? "{}");
+    if (!stored || typeof stored !== "object" || Array.isArray(stored)) return {};
+    return Object.fromEntries(Object.entries(stored).filter(([, color]) => typeof color === "string" && /^#[0-9a-f]{6}$/i.test(color))) as Record<string, string>;
+  } catch {
+    return {};
+  }
+})();
 
 export const roadWidthMeters: Record<RoadSubtype, number> = { large: 24, medium: 14, small: 8, pedestrian: 4, highway: 28, ramp: 10 };
 
@@ -50,6 +78,8 @@ interface EditorUiState {
   currentTool: EditorTool;
   zoomPercent: number;
   layers: LayerVisibility;
+  facilityColors: Record<string, string>;
+  zoneColors: Record<string, string>;
   locale: Locale;
   roadMode: "straight" | "curve";
   roadShape: RoadShape;
@@ -82,7 +112,16 @@ interface EditorUiState {
   buildingSnapToRoad: boolean;
   buildingSetback: number;
   buildingExtrude: boolean;
+  buildingEdgeStyle: PolygonEdgeStyle;
+  waterMode: WaterMode;
+  waterEdgeStyle: PolygonEdgeStyle;
+  blockRows: number;
+  blockColumns: number;
+  blockRoadSubtype: BlockRoadSubtype;
+  universityMode: "browse" | "zone" | "edit" | "facility";
+  universityAffiliationPick?: UniversityAffiliationPick;
   transitMode: TransitMode;
+  transportSystem?: TransportSystem;
   transitLineColor: string;
   shortcuts: KeyboardShortcuts;
   uiOpacity: number;
@@ -96,6 +135,8 @@ interface EditorUiState {
   setCurrentTool: (tool: EditorTool) => void;
   setZoomPercent: (zoomPercent: number) => void;
   toggleLayer: (layer: LayerId) => void;
+  setFacilityColor: (type: string, color: string) => void;
+  setZoneTypeColor: (type: string, color: string) => void;
   setLocale: (locale: Locale) => void;
   setRoadMode: (mode: "straight" | "curve") => void;
   setRoadShape: (shape: RoadShape) => void;
@@ -128,7 +169,16 @@ interface EditorUiState {
   setBuildingSnapToRoad: (enabled: boolean) => void;
   setBuildingSetback: (setback: number) => void;
   setBuildingExtrude: (enabled: boolean) => void;
+  setBuildingEdgeStyle: (style: PolygonEdgeStyle) => void;
+  setWaterMode: (mode: WaterMode) => void;
+  setWaterEdgeStyle: (style: PolygonEdgeStyle) => void;
+  setBlockRows: (rows: number) => void;
+  setBlockColumns: (columns: number) => void;
+  setBlockRoadSubtype: (subtype: BlockRoadSubtype) => void;
+  setUniversityMode: (mode: "browse" | "zone" | "edit" | "facility") => void;
+  setUniversityAffiliationPick: (pick?: UniversityAffiliationPick) => void;
   setTransitMode: (mode: TransitMode) => void;
+  setTransportSystem: (system?: TransportSystem) => void;
   setTransitLineColor: (color: string) => void;
   setShortcut: (action: ShortcutAction, key: string) => void;
   resetShortcuts: () => void;
@@ -152,7 +202,7 @@ export const defaultLayerVisibility: LayerVisibility = {
   parks: true,
   water: true,
   labels: true,
-  zoning: false,
+  zoning: true,
   grid: false,
 };
 
@@ -160,6 +210,8 @@ export const useEditorStore = create<EditorUiState>((set) => ({
   currentTool: "select",
   zoomPercent: 1000,
   layers: defaultLayerVisibility,
+  facilityColors: savedFacilityColors,
+  zoneColors: savedZoneColors,
   locale: getInitialLocale(),
   roadMode: "straight",
   roadShape: "draw",
@@ -175,7 +227,7 @@ export const useEditorStore = create<EditorUiState>((set) => ({
   roadParallelOffset: 20,
   zoneMode: "custom",
   zoneType: "residential",
-  zoneColor: defaultZoneColors.residential,
+  zoneColor: savedZoneColors.residential ?? defaultZoneColors.residential,
   zoneIcon: "residential",
   zoneIconColor: defaultZoneIconColors.residential,
   zoneIconOpacity: 1,
@@ -192,7 +244,16 @@ export const useEditorStore = create<EditorUiState>((set) => ({
   buildingSnapToRoad: true,
   buildingSetback: 6,
   buildingExtrude: false,
-  transitMode: "terminal",
+  buildingEdgeStyle: "straight",
+  waterMode: "free",
+  waterEdgeStyle: "straight",
+  blockRows: 2,
+  blockColumns: 2,
+  blockRoadSubtype: "small",
+  universityMode: "browse",
+  universityAffiliationPick: undefined,
+  transitMode: "create",
+  transportSystem: undefined,
   transitLineColor: "#2d8cff",
   shortcuts: savedShortcuts,
   uiOpacity: Math.max(0.35, Math.min(1, Number(localStorage.getItem("citygraph:ui-opacity")) || 0.82)),
@@ -203,12 +264,22 @@ export const useEditorStore = create<EditorUiState>((set) => ({
   autoSaveSlots: Math.max(1, Number(localStorage.getItem("citygraph:auto-save-slots")) || 5),
   autoSaveRetentionDays: Math.max(1, Number(localStorage.getItem("citygraph:auto-save-retention")) || 30),
   toolbarCollapsed: localStorage.getItem("citygraph:toolbar-collapsed") === "true",
-  setCurrentTool: (currentTool) => set((state) => ({ currentTool, layers: currentTool === "zones" ? { ...state.layers, zoning: true } : currentTool === "buildings" ? { ...state.layers, buildings: true } : currentTool === "public" ? { ...state.layers, facilities: true } : currentTool === "transit" ? { ...state.layers, transit: true } : state.layers })),
+  setCurrentTool: (currentTool) => set((state) => ({ currentTool, layers: currentTool === "roads" ? { ...state.layers, roads: true } : currentTool === "zones" ? { ...state.layers, zoning: true } : currentTool === "buildings" ? { ...state.layers, buildings: true } : currentTool === "public" ? { ...state.layers, facilities: true } : currentTool === "transit" ? { ...state.layers, transit: true } : currentTool === "water" ? { ...state.layers, water: true } : currentTool === "blocks" ? { ...state.layers, roads: true, zoning: true } : currentTool === "university" ? { ...state.layers, zoning: true, facilities: true } : state.layers })),
   setZoomPercent: (zoomPercent) => set({ zoomPercent: Math.round(zoomPercent) }),
   toggleLayer: (layer) =>
     set((state) => ({
       layers: { ...state.layers, [layer]: !state.layers[layer] },
     })),
+  setFacilityColor: (type, color) => set((state) => {
+    const facilityColors = { ...state.facilityColors, [type]: color };
+    localStorage.setItem("citygraph:facility-colors", JSON.stringify(facilityColors));
+    return { facilityColors };
+  }),
+  setZoneTypeColor: (type, color) => set((state) => {
+    const zoneColors = { ...state.zoneColors, [type]: color };
+    localStorage.setItem("citygraph:zone-colors", JSON.stringify(zoneColors));
+    return { zoneColors, ...(state.zoneType === type ? { zoneColor: color } : {}) };
+  }),
   setLocale: (locale) => { localStorage.setItem("citygraph:locale", locale); set({ locale }); },
   setRoadMode: (roadMode) => set({ roadMode }),
   setRoadShape: (roadShape) => set({ roadShape }),
@@ -223,7 +294,7 @@ export const useEditorStore = create<EditorUiState>((set) => ({
   setRoadPolygonSides: (roadPolygonSides) => set({ roadPolygonSides: Math.max(3, Math.min(24, Math.round(roadPolygonSides))) }),
   setRoadParallelOffset: (roadParallelOffset) => set({ roadParallelOffset: Math.max(1, Math.min(500, Math.round(roadParallelOffset * 2) / 2)) }),
   setZoneMode: (zoneMode) => set({ zoneMode }),
-  setZoneType: (zoneType) => set((state) => ({ zoneType, zoneColor: zoneType === "custom" ? state.zoneColor : defaultZoneColors[zoneType], zoneIcon: zoneType === "custom" ? state.zoneIcon : defaultZoneIcons[zoneType], zoneIconColor: zoneType === "custom" ? state.zoneIconColor : defaultZoneIconColors[zoneType], zoneIconOpacity: zoneType === "custom" ? state.zoneIconOpacity : 1 })),
+  setZoneType: (zoneType) => set((state) => ({ zoneType, zoneColor: state.zoneColors[zoneType] ?? defaultZoneColors[zoneType], zoneIcon: zoneType === "custom" ? state.zoneIcon : defaultZoneIcons[zoneType], zoneIconColor: zoneType === "custom" ? state.zoneIconColor : defaultZoneIconColors[zoneType], zoneIconOpacity: zoneType === "custom" ? state.zoneIconOpacity : 1 })),
   setZoneColor: (zoneColor) => set({ zoneColor }),
   setZoneIcon: (zoneIcon) => set({ zoneIcon }),
   setZoneIconColor: (zoneIconColor) => set({ zoneIconColor }),
@@ -241,7 +312,16 @@ export const useEditorStore = create<EditorUiState>((set) => ({
   setBuildingSnapToRoad: (buildingSnapToRoad) => set({ buildingSnapToRoad }),
   setBuildingSetback: (buildingSetback) => set({ buildingSetback: Math.max(0, Math.min(200, Math.round(buildingSetback * 2) / 2)) }),
   setBuildingExtrude: (buildingExtrude) => set({ buildingExtrude }),
+  setBuildingEdgeStyle: (buildingEdgeStyle) => set({ buildingEdgeStyle }),
+  setWaterMode: (waterMode) => set({ waterMode }),
+  setWaterEdgeStyle: (waterEdgeStyle) => set({ waterEdgeStyle }),
+  setBlockRows: (blockRows) => set({ blockRows: Math.max(1, Math.min(20, Math.round(blockRows))) }),
+  setBlockColumns: (blockColumns) => set({ blockColumns: Math.max(1, Math.min(20, Math.round(blockColumns))) }),
+  setBlockRoadSubtype: (blockRoadSubtype) => set({ blockRoadSubtype }),
+  setUniversityMode: (universityMode) => set({ universityMode }),
+  setUniversityAffiliationPick: (universityAffiliationPick) => set({ universityAffiliationPick }),
   setTransitMode: (transitMode) => set({ transitMode }),
+  setTransportSystem: (transportSystem) => set({ transportSystem }),
   setTransitLineColor: (transitLineColor) => set({ transitLineColor }),
   setShortcut: (action, key) => set((state) => {
     const normalized = key.toLowerCase(); const shortcuts = { ...state.shortcuts }; const duplicate = (Object.keys(shortcuts) as ShortcutAction[]).find((candidate) => candidate !== action && shortcuts[candidate] === normalized);

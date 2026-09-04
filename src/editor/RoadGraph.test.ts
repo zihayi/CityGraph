@@ -3,7 +3,7 @@ import type { City } from "../model/City";
 import { buildRoadCreation, continuationRoad, splitRoadEdge } from "./RoadGraph";
 
 function emptyCity(): City {
-  return { id: "test", name: "Test", bounds: { x: 0, y: 0, width: 1000, height: 1000 }, mapSize: "small", terrain: "flat", roadNodes: [], roads: [], roadEdges: [], buildings: [], blocks: [], zones: [], parks: [], waters: [], pois: [], facilities: [], transitLines: [], transitStations: [], busTerminals: [], busLines: [], busStops: [], labels: [] };
+  return { id: "test", name: "Test", bounds: { x: 0, y: 0, width: 1000, height: 1000 }, mapSize: "small", terrain: "flat", roadNodes: [], roads: [], roadEdges: [], buildings: [], blocks: [], zones: [], parks: [], waters: [], pois: [], facilities: [], universities: [], transitLines: [], transitStations: [], busTerminals: [], busLines: [], busStops: [], labels: [] };
 }
 function input(start: { x: number; y: number }, end: { x: number; y: number }, overrides: Partial<Parameters<typeof buildRoadCreation>[1]> = {}): Parameters<typeof buildRoadCreation>[1] {
   return { start, end, category: "normal", subtype: "small", width: 8, name: "Road", structure: "ground", geometry: { type: "line" }, ...overrides };
@@ -45,6 +45,13 @@ describe("Logical roads", () => {
     const split = splitRoadEdge(cityFrom(created), created.roadEdges[0]!.id, { x: 40, y: 0 });
     expect(split.changed).toBe(true); expect(split.roads).toHaveLength(1); expect(split.roads[0]?.id).toBe(created.roadId);
     expect(split.roadEdges).toHaveLength(2); expect(split.roadEdges.every((edge) => edge.roadId === created.roadId)).toBe(true);
+  });
+
+  it("splits bezier geometry without losing its controls or road attributes", () => {
+    const created = buildRoadCreation(emptyCity(), input({ x: 0, y: 0 }, { x: 100, y: 0 }, { name: "Curve", width: 14, subtype: "medium", geometry: { type: "bezier", controlPoints: [{ x: 50, y: 80 }] } }));
+    const split = splitRoadEdge(cityFrom(created), created.roadEdges[0]!.id, { x: 50, y: 40 });
+    expect(split.roadEdges).toHaveLength(2); expect(split.roadEdges.every((edge) => edge.geometry.type === "bezier" && edge.name === "Curve")).toBe(true);
+    expect(split.roads[0]).toMatchObject({ name: "Curve", width: 14, subtype: "medium" }); expect(split.roads[0]?.segmentIds).toHaveLength(2);
   });
 
   it("only offers terminal roads for continuation", () => {

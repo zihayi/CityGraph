@@ -9,7 +9,7 @@ export function zoneColor(type: ZoneType, custom?: string): number { const value
 export class ZoningRenderer {
   public render(city: City, selection: EditorSelection = null, editable = false): Container {
     const container = new Container();
-    for (const block of city.blocks) { if (!block.zoneType) continue; const color = zoneColor(block.zoneType); container.addChild(drawPolygon(new Graphics(), block.polygon).fill({ color, alpha: 0.2 }).stroke({ color, alpha: 0.55, width: 1.5 })); }
+    for (const block of city.blocks) { const color = block.zoneType ? zoneColor(block.zoneType) : 0x9caebd; container.addChild(drawPolygon(new Graphics(), block.polygon).fill({ color, alpha: block.zoneType ? 0.2 : 0.1 }).stroke({ color, alpha: block.zoneType ? 0.55 : 0.35, width: 1.5 })); }
     for (const zone of city.zones) container.addChild(this.drawZone(zone, selection?.kind === "zone" && selection.id === zone.id, editable));
     return container;
   }
