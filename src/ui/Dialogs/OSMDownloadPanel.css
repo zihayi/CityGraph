@@ -1,0 +1,28 @@
+.osm-download-panel { display: grid; gap: 12px; min-width: 0; }
+.osm-place-search { display: flex; gap: 8px; }
+.osm-place-search input { flex: 1; min-width: 0; }
+.osm-place-search button, .osm-online-toolbar button, .osm-download-actions button, .osm-source-switch button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 12px; border: 1px solid #43676f; border-radius: 7px; background: #14313d; color: #d0e7e6; font-size: 12px; cursor: pointer; }
+.osm-online-toolbar { display: flex; flex-wrap: wrap; gap: 7px; }
+.osm-online-toolbar button[aria-pressed="true"], .osm-source-switch button[aria-pressed="true"] { border-color: #60d2c8; background: #19645f; color: #edfffa; }
+.osm-online-map { position: relative; isolation: isolate; width: 100%; height: 340px; min-height: 340px; overflow: hidden; border: 1px solid #487278; border-radius: 9px; background: #dce5df; }
+.osm-online-map-canvas { width: 100%; height: 100%; }
+.osm-online-map.is-selecting .leaflet-container, .osm-online-map.is-selecting .leaflet-interactive { cursor: crosshair; }
+.osm-online-map.is-disabled { pointer-events: none; opacity: .8; }
+.osm-online-map .leaflet-control-attribution { font-size: 9px; }
+.osm-online-map .leaflet-control-attribution a { color: #125549; }
+.osm-online-map .leaflet-control-zoom a { color: #214b4a; text-decoration: none; }
+.osm-place-results { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; max-height: 190px; overflow-y: auto; }
+.osm-place-results button { display: grid; gap: 4px; width: 100%; padding: 9px 11px; border: 1px solid #365863; border-radius: 7px; background: #102b36; color: #d7eeee; text-align: left; cursor: pointer; }
+.osm-place-results button:hover { border-color: #62cfc5; }
+.osm-place-results small { color: #9bb6bb; font-size: 10px; }
+.osm-coordinate-fields { color: #b6cccc; font-size: 12px; }
+.osm-coordinate-fields summary { cursor: pointer; }
+.osm-coordinate-fields > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
+.osm-download-size { color: #bde5df; font-variant-numeric: tabular-nums; }
+.osm-download-actions { display: flex; justify-content: flex-end; }
+.osm-download-actions button.primary { border-color: #55d4c7; background: #117b74; color: #eafff8; }
+.osm-download-progress { display: grid; gap: 6px; color: #bfe9e4; font-size: 12px; }
+.osm-download-progress progress { width: 100%; height: 7px; accent-color: #4bd6c9; }
+.osm-download-attribution { color: #9ab7ba; font-size: 10px !important; }
+.osm-source-switch { display: flex; gap: 8px; }
+.osm-source-switch button { flex: 1; }

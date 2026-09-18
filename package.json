@@ -15,15 +15,19 @@
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-dialog": "^2.7.3",
+    "leaflet": "^1.9.4",
     "lucide-react": "^0.542.0",
     "pixi.js": "^8.20.1",
+    "polygon-clipping": "^0.15.7",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "saxes": "^6.0.0",
     "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.12",
     "@tauri-apps/cli": "^2.11.4",
+    "@types/leaflet": "^1.9.22",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
     "@vitejs/plugin-react": "^5.0.2",

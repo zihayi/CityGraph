@@ -14,9 +14,18 @@ function drawFootprint(graphics: Graphics, footprint: BuildingFootprint, color: 
 
 export class BuildingRenderer {
   public render(city: City, selection: EditorSelection = null): Container {
-    const container = new Container();
-    for (const building of city.buildings) { const selected = selection?.kind === "building" && selection.id === building.id; const shape = new Graphics(); drawFootprint(shape, building.footprint, colors[building.type], 0.95, { color: selected ? 0x168cff : 0x9da8aa, width: selected ? 3 : 1.2 }); container.addChild(shape); }
+    const container = new Container(); const selectedIds = new Set(selection?.kind === "building-multi" ? selection.ids : selection?.kind === "building" ? [selection.id] : selection?.kind === "spatial-group" ? selection.items.filter((item) => item.kind === "building").map((item) => item.id) : []);
+    const groups = new Map<string, Graphics>();
+    for (const building of city.buildings) { const selected = selectedIds.has(building.id); const key = `${building.type}:${selected}`; let shape = groups.get(key); if (!shape) { shape = new Graphics(); groups.set(key, shape); } drawFootprint(shape, building.footprint, colors[building.type], 0.95, { color: selected ? 0x168cff : 0x9da8aa, width: selected ? 3 : 1.2 }); }
+    for (const shape of groups.values()) container.addChild(shape);
     return container;
+  }
+
+  public renderSelection(building: Building): Container {
+    const container = new Container({ label: `building-selection:${building.id}` }); const outline = new Graphics();
+    // The opaque 3px highlight covers the 1.2px base outline without repainting translucent fills.
+    for (const ring of [building.footprint.outer, ...building.footprint.holes]) { drawRing(outline, ring); outline.stroke({ color: 0x168cff, width: 3 }); }
+    container.addChild(outline); return container;
   }
 
   public renderPreview(building: Building, valid: boolean): Container { const container = new Container(); const shape = new Graphics(); if (building.footprint.outer.length >= 3) drawFootprint(shape, building.footprint, valid ? colors[building.type] : 0xe47878, 0.48, { color: valid ? 0x159b9e : 0xc73d48, width: 2 }); else { const first = building.footprint.outer[0]; if (first) { shape.moveTo(first.x, first.y); for (const point of building.footprint.outer.slice(1)) shape.lineTo(point.x, point.y); shape.stroke({ color: 0x159b9e, width: 2 }); for (const point of building.footprint.outer) shape.circle(point.x, point.y, 3).fill({ color: 0x159b9e }); } } container.addChild(shape); return container; }

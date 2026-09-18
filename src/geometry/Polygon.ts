@@ -132,3 +132,35 @@ export function applyPolygonEdgeStyle(
     ? smoothClosedPolygon(polygon, 1)
     : polygon.map((point) => ({ ...point }));
 }
+
+export function simplifyClosedPolygon(polygon: readonly Point[], tolerance: number): Point[] {
+  const points = polygon.filter((point, index) => index === 0 || Math.hypot(point.x - polygon[index - 1]!.x, point.y - polygon[index - 1]!.y) > DEFAULT_EPSILON).map((point) => ({ ...point }));
+  if (points.length > 1 && Math.hypot(points[0]!.x - points.at(-1)!.x, points[0]!.y - points.at(-1)!.y) <= DEFAULT_EPSILON) points.pop();
+  if (points.length < 4 || tolerance <= 0) return points;
+  let opposite = 1; let farthest = 0;
+  for (let index = 1; index < points.length; index += 1) { const value = Math.hypot(points[index]!.x - points[0]!.x, points[index]!.y - points[0]!.y); if (value > farthest) { farthest = value; opposite = index; } }
+  const first = simplifyOpenPath(points.slice(0, opposite + 1), tolerance); const second = simplifyOpenPath([...points.slice(opposite), points[0]!], tolerance);
+  const simplified = [...first.slice(0, -1), ...second.slice(0, -1)];
+  return simplified.length >= 3 ? simplified : points;
+}
+
+export function polygonContainsPolygon(container: readonly Point[], candidate: readonly Point[]): boolean {
+  if (container.length < 3 || candidate.length < 3 || !candidate.every((point) => pointInPolygon(point, container, { includeBoundary: false, epsilon: 1e-6 }))) return false;
+  for (let first = 0; first < container.length; first += 1) for (let second = 0; second < candidate.length; second += 1) if (segmentIntersection(container[first]!, container[(first + 1) % container.length]!, candidate[second]!, candidate[(second + 1) % candidate.length]!)) return false;
+  return true;
+}
+
+export function polygonsIntersectOrContain(first: readonly Point[], second: readonly Point[]): boolean {
+  if (first.length < 3 || second.length < 3) return false;
+  for (let a = 0; a < first.length; a += 1) for (let b = 0; b < second.length; b += 1) if (segmentIntersection(first[a]!, first[(a + 1) % first.length]!, second[b]!, second[(b + 1) % second.length]!)) return true;
+  return pointInPolygon(first[0]!, second) || pointInPolygon(second[0]!, first);
+}
+
+function simplifyOpenPath(points: readonly Point[], tolerance: number): Point[] {
+  if (points.length <= 2) return points.map((point) => ({ ...point }));
+  const start = points[0]!; const end = points.at(-1)!; let farthestIndex = -1; let farthestDistance = tolerance;
+  for (let index = 1; index < points.length - 1; index += 1) { const value = distancePointToSegment(points[index]!, start, end); if (value > farthestDistance) { farthestDistance = value; farthestIndex = index; } }
+  if (farthestIndex < 0) return [{ ...start }, { ...end }];
+  const left = simplifyOpenPath(points.slice(0, farthestIndex + 1), tolerance); const right = simplifyOpenPath(points.slice(farthestIndex), tolerance);
+  return [...left.slice(0, -1), ...right];
+}

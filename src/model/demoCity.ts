@@ -1,6 +1,6 @@
 import type { Point } from "../geometry/Point";
 import { createBuildingPreset } from "../geometry/BuildingGeometry";
-import type {
+import { defaultEconomySettings, type
   Block,
   Building,
   BuildingType,
@@ -210,6 +210,7 @@ export function createDemoCity(): City {
     bounds: { x: 0, y: 0, width: 1600, height: 980 },
     mapSize: "small",
     terrain: "lakes",
+    economy: { ...defaultEconomySettings },
     roadNodes: [...roadNodes],
     roads: [...roads],
     roadEdges: [...roadEdges],
@@ -221,6 +222,9 @@ export function createDemoCity(): City {
       {
         id: "pinewood-park",
         name: "Pinewood Park",
+        source: "custom",
+        color: "#76ad67",
+        opacity: 0.62,
         points: [
           { x: 80, y: 60 }, { x: 520, y: 55 }, { x: 575, y: 180 }, { x: 510, y: 300 },
           { x: 250, y: 310 }, { x: 100, y: 230 },
@@ -229,11 +233,15 @@ export function createDemoCity(): City {
       {
         id: "central-park",
         name: "Central Park",
+        source: "custom",
+        color: "#76ad67",
+        opacity: 0.62,
         points: [
           { x: 940, y: 330 }, { x: 1170, y: 320 }, { x: 1175, y: 555 }, { x: 960, y: 565 },
         ],
       },
     ],
+    districts: [],
     waters: [
       {
         id: "river",
@@ -276,7 +284,7 @@ export function createDemoCity(): City {
       { id: "poi-school", x: 1265, y: 160, type: "school", name: "Northfield School" },
       { id: "poi-harbor", x: 820, y: 790, type: "harbor", name: "Harbor Terminal" },
     ],
-    facilities: [],
+    facilities: [], companies: [], hospitals: [],
     transitStations: [
       { id: "station-west", x: 330, y: 475, type: "train", name: "Westgate" },
       { id: "station-civic", x: 790, y: 485, type: "metro", name: "Civic Center" },
@@ -286,6 +294,10 @@ export function createDemoCity(): City {
     transitLines: [
       { id: "line-river", name: "River Line", color: 0x4f82d7, stationIds: ["station-west", "station-civic", "station-east", "station-north"] },
     ],
+    railNodes: [],
+    railTracks: [],
+    railStations: [],
+    railLines: [],
     busTerminals: [],
     busLines: [],
     busStops: [],

@@ -1,0 +1,4 @@
+[out:xml][timeout:60];
+way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|primary_link|secondary|secondary_link|tertiary|tertiary_link|residential|unclassified|service|living_street|road|pedestrian|footway|path|cycleway|steps|track|bridleway)$"]["area"!="yes"](30.2190,120.1170,30.2710,120.1760);
+(._;>;);
+out body;

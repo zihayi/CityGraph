@@ -3,6 +3,7 @@ import busIconUrl from "../../../assets/transport/bus.svg?url";
 import metroIconUrl from "../../../assets/transport/metro.svg?url";
 import airplaneIconUrl from "../../../assets/transport/airplane.svg?url";
 import ferryIconUrl from "../../../assets/transport/ship.svg?url";
+import trainIconUrl from "../../../assets/transport/train.svg?url";
 import { useEditorStore, type TransitMode, type TransportSystem } from "../../app/store/editorStore";
 import type { Editor } from "../../editor/Editor";
 import type { TranslationKey } from "../../i18n";
@@ -19,15 +20,16 @@ const helpKeys: Record<TransitMode, TranslationKey> = {
 
 const transportSystems: Array<{ id: TransportSystem; key: TranslationKey; iconUrl: string }> = [
   { id: "bus", key: "transport.bus", iconUrl: busIconUrl },
+  { id: "train", key: "transport.train", iconUrl: trainIconUrl },
   { id: "metro", key: "transport.metro", iconUrl: metroIconUrl },
   { id: "airplane", key: "transport.airplane", iconUrl: airplaneIconUrl },
   { id: "ferry", key: "transport.ferry", iconUrl: ferryIconUrl },
 ];
 
 export function TransportTypePalette({ t }: { t: (key: TranslationKey) => string }) {
-  const selected = useEditorStore((state) => state.transportSystem); const setSelected = useEditorStore((state) => state.setTransportSystem);
+  const selected = useEditorStore((state) => state.transportSystem); const setSelected = useEditorStore((state) => state.setTransportSystem); const railMode = useEditorStore((state) => state.railMode); const setRailMode = useEditorStore((state) => state.setRailMode);
   return <aside className="road-palette transport-type-palette glass-panel" aria-label={t("transport.choose")}>
-    <div className="transport-type-grid">{transportSystems.map((system) => <button key={system.id} className={selected === system.id ? "is-active" : ""} type="button" aria-pressed={selected === system.id} title={t(system.key)} onClick={() => setSelected(system.id)}><img src={system.iconUrl} alt=""/><small>{t(system.key)}</small></button>)}</div>
+    <div className="transport-type-grid">{transportSystems.map((system) => <button key={system.id} className={selected === system.id ? "is-active" : ""} type="button" aria-pressed={selected === system.id} title={t(system.key)} onClick={() => { setSelected(system.id); if ((system.id === "train" || system.id === "metro") && railMode !== "line" && railMode !== "edit") setRailMode("line"); }}><img src={system.iconUrl} alt=""/><small>{t(system.key)}</small></button>)}</div>
   </aside>;
 }
 

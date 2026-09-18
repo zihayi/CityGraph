@@ -3,8 +3,9 @@ import { pointInPolygon } from "./Polygon";
 import { distancePointToSegment, nearestPointOnSegment, segmentIntersection } from "./Segment";
 import type { BuildingFootprint } from "../model/City";
 
-export type BuildingPreset = "rectangle" | "l" | "u" | "h" | "courtyard";
+export type BuildingPreset = "rectangle" | "l" | "u" | "h" | "courtyard" | "ring";
 export interface FootprintEdge { ringIndex: number; edgeIndex: number }
+export interface RingFootprintRadii { center: Point; outerRadius: number; innerRadius: number }
 
 const EPSILON = 1e-5;
 
@@ -85,9 +86,27 @@ export function createBuildingRectangleFromCorners(first: Point, opposite: Point
   return { outer: [{ x: minX, y: minY }, { x: maxX, y: minY }, { x: maxX, y: maxY }, { x: minX, y: maxY }], holes: [] };
 }
 
+function circlePoints(radius: number, count: number, clockwise = false): Point[] {
+  return Array.from({ length: count }, (_, index) => { const angle = (clockwise ? -1 : 1) * index * Math.PI * 2 / count; return { x: Math.cos(angle) * radius, y: Math.sin(angle) * radius }; });
+}
+
+export function ringFootprintRadii(footprint: BuildingFootprint): RingFootprintRadii | undefined {
+  if (footprint.outer.length < 12 || footprint.holes.length !== 1 || footprint.holes[0]!.length < 12) return undefined;
+  const center = footprintCenter(footprint); const radii = (ring: readonly Point[]) => ring.map((point) => Math.hypot(point.x - center.x, point.y - center.y)); const outer = radii(footprint.outer); const inner = radii(footprint.holes[0]!); const outerRadius = outer.reduce((sum, value) => sum + value, 0) / outer.length; const innerRadius = inner.reduce((sum, value) => sum + value, 0) / inner.length;
+  if (Math.max(...outer.map((value) => Math.abs(value - outerRadius))) > outerRadius * 0.01 || Math.max(...inner.map((value) => Math.abs(value - innerRadius))) > innerRadius * 0.01 || innerRadius >= outerRadius - EPSILON) return undefined;
+  return { center, outerRadius, innerRadius };
+}
+
+export function resizeRingFootprint(footprint: BuildingFootprint, outerRadius: number, innerRadius: number): BuildingFootprint | undefined {
+  const ring = ringFootprintRadii(footprint); if (!ring) return undefined; const outer = Math.max(2, outerRadius); const inner = Math.max(1, Math.min(innerRadius, outer - 1));
+  const resize = (points: readonly Point[], radius: number) => points.map((point) => { const angle = Math.atan2(point.y - ring.center.y, point.x - ring.center.x); return { x: ring.center.x + Math.cos(angle) * radius, y: ring.center.y + Math.sin(angle) * radius }; });
+  return { outer: resize(footprint.outer, outer), holes: [resize(footprint.holes[0]!, inner)] };
+}
+
 export function createBuildingPreset(preset: BuildingPreset, center: Point, width: number, depth: number, rotation = 0): BuildingFootprint {
   const w = Math.max(4, width); const d = Math.max(4, depth); const t = Math.max(0.5, Math.min(w, d) * 0.28); let outer: Point[]; let holes: Point[][] = [];
-  if (preset === "l") outer = [{ x: -w / 2, y: -d / 2 }, { x: w / 2, y: -d / 2 }, { x: w / 2, y: -d / 2 + t }, { x: -w / 2 + t, y: -d / 2 + t }, { x: -w / 2 + t, y: d / 2 }, { x: -w / 2, y: d / 2 }];
+  if (preset === "ring") { const outerRadius = w / 2; const innerRadius = Math.max(1, Math.min(d / 2, outerRadius - 1)); outer = circlePoints(outerRadius, 48); holes = [circlePoints(innerRadius, 48, true)]; }
+  else if (preset === "l") outer = [{ x: -w / 2, y: -d / 2 }, { x: w / 2, y: -d / 2 }, { x: w / 2, y: -d / 2 + t }, { x: -w / 2 + t, y: -d / 2 + t }, { x: -w / 2 + t, y: d / 2 }, { x: -w / 2, y: d / 2 }];
   else if (preset === "u") outer = [{ x: -w / 2, y: -d / 2 }, { x: -w / 2 + t, y: -d / 2 }, { x: -w / 2 + t, y: d / 2 - t }, { x: w / 2 - t, y: d / 2 - t }, { x: w / 2 - t, y: -d / 2 }, { x: w / 2, y: -d / 2 }, { x: w / 2, y: d / 2 }, { x: -w / 2, y: d / 2 }];
   else if (preset === "h") outer = [{ x: -w / 2, y: -d / 2 }, { x: -w / 2 + t, y: -d / 2 }, { x: -w / 2 + t, y: -t / 2 }, { x: w / 2 - t, y: -t / 2 }, { x: w / 2 - t, y: -d / 2 }, { x: w / 2, y: -d / 2 }, { x: w / 2, y: d / 2 }, { x: w / 2 - t, y: d / 2 }, { x: w / 2 - t, y: t / 2 }, { x: -w / 2 + t, y: t / 2 }, { x: -w / 2 + t, y: d / 2 }, { x: -w / 2, y: d / 2 }];
   else { outer = [{ x: -w / 2, y: -d / 2 }, { x: w / 2, y: -d / 2 }, { x: w / 2, y: d / 2 }, { x: -w / 2, y: d / 2 }]; if (preset === "courtyard") holes = [[{ x: -w / 2 + t, y: -d / 2 + t }, { x: -w / 2 + t, y: d / 2 - t }, { x: w / 2 - t, y: d / 2 - t }, { x: w / 2 - t, y: -d / 2 + t }]]; }

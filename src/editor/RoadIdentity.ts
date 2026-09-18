@@ -35,15 +35,32 @@ export function roadNameAtNode(city: Pick<City, "roads" | "roadEdges">, roadId: 
 }
 
 export function connectedRoadEdgeComponents(edges: RoadEdge[]): RoadEdge[][] {
-  const unseen = new Set(edges.map((edge) => edge.id)); const components: RoadEdge[][] = [];
-  while (unseen.size) {
-    const firstId = unseen.values().next().value as string; unseen.delete(firstId); const componentIds = new Set([firstId]); const nodes = new Set<string>(); let changed = true;
-    while (changed) {
-      changed = false;
-      for (const edge of edges) if (componentIds.has(edge.id)) { nodes.add(edge.startNodeId); nodes.add(edge.endNodeId); }
-      for (const edge of edges) if (unseen.has(edge.id) && (nodes.has(edge.startNodeId) || nodes.has(edge.endNodeId))) { unseen.delete(edge.id); componentIds.add(edge.id); changed = true; }
+  const nodeEdges = new Map<string, string[]>(); const edgeNodes = new Map<string, string[]>();
+  for (const edge of edges) {
+    let nodes = edgeNodes.get(edge.id);
+    if (!nodes) { nodes = []; edgeNodes.set(edge.id, nodes); }
+    nodes.push(edge.startNodeId, edge.endNodeId);
+    for (const nodeId of [edge.startNodeId, edge.endNodeId]) {
+      let adjacent = nodeEdges.get(nodeId);
+      if (!adjacent) { adjacent = []; nodeEdges.set(nodeId, adjacent); }
+      adjacent.push(edge.id);
     }
-    components.push(edges.filter((edge) => componentIds.has(edge.id)));
   }
+  const componentById = new Map<string, number>(); const components: RoadEdge[][] = [];
+  for (const edge of edges) {
+    if (componentById.has(edge.id)) continue;
+    const component = components.length; components.push([]);
+    const queue = [edge.id]; componentById.set(edge.id, component);
+    for (let index = 0; index < queue.length; index += 1) {
+      for (const nodeId of edgeNodes.get(queue[index]!)!) {
+        const adjacent = nodeEdges.get(nodeId);
+        if (!adjacent) continue;
+        nodeEdges.delete(nodeId); // Expand each junction once, including high-degree junctions.
+        for (const id of adjacent) if (!componentById.has(id)) { componentById.set(id, component); queue.push(id); }
+      }
+    }
+  }
+  // Traversal order must not change the input order within each component.
+  for (const edge of edges) components[componentById.get(edge.id)!]!.push(edge);
   return components;
 }

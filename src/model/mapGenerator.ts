@@ -1,8 +1,14 @@
-import type { Point } from "../geometry/Point";
+import type { Bounds, Point } from "../geometry/Point";
 import { smoothClosedPolygon } from "../geometry/Polygon";
-import type { City, MapSize, TerrainType, WaterArea } from "./City";
+import { defaultEconomySettings, type City, type MapSize, type TerrainType, type WaterArea } from "./City";
 
-export const mapDimensions: Record<MapSize, number> = { small: 6000, medium: 12000, large: 20000, unlimited: 1_000_000 };
+export const mapDimensions: Record<MapSize, number> = { small: 6000, medium: 12000, large: 20000, custom: 12000, unlimited: 1_000_000 };
+
+export function canvasRenderBounds(city: Pick<City, "bounds" | "mapSize">): Bounds {
+  if (city.mapSize !== "unlimited") return city.bounds;
+  const dimension = mapDimensions.unlimited; const center = { x: city.bounds.x + city.bounds.width / 2, y: city.bounds.y + city.bounds.height / 2 };
+  return { x: center.x - dimension / 2, y: center.y - dimension / 2, width: dimension, height: dimension };
+}
 
 export interface NewMapOptions {
   name: string;
@@ -61,7 +67,8 @@ export function createNewCity(options: NewMapOptions): City {
     bounds: { x: origin, y: origin, width: dimension, height: dimension },
     mapSize: options.size,
     terrain: options.terrain,
-    roadNodes: [], roads: [], roadEdges: [], buildings: [], blocks: [], zones: [], universities: [], parks: [], waters,
-    pois: [], facilities: [], transitLines: [], transitStations: [], busTerminals: [], busLines: [], busStops: [], labels: [],
+    economy: { ...defaultEconomySettings },
+    roadNodes: [], roads: [], roadEdges: [], buildings: [], blocks: [], zones: [], universities: [], hospitals: [], parks: [], districts: [], waters,
+    pois: [], facilities: [], companies: [], transitLines: [], transitStations: [], railNodes: [], railTracks: [], railStations: [], railLines: [], busTerminals: [], busLines: [], busStops: [], labels: [],
   };
 }

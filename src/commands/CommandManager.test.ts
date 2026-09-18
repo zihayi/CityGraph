@@ -22,4 +22,17 @@ describe("CommandManager", () => {
     manager.redo();
     expect(value).toBe(1);
   });
+
+  it("keeps stable state identities across undo, redo and branches", () => {
+    const manager = new CommandManager();
+    const initial = manager.stateId;
+    const command = { label: "No-op", execute: () => undefined, undo: () => undefined };
+    manager.execute(command); const executed = manager.stateId;
+    expect(executed).not.toBe(initial);
+    manager.undo(); expect(manager.stateId).toBe(initial);
+    manager.redo(); expect(manager.stateId).toBe(executed);
+    manager.undo(); manager.execute(command);
+    expect(manager.stateId).not.toBe(executed);
+    manager.clear(); expect(manager.stateId).not.toBe(initial);
+  });
 });

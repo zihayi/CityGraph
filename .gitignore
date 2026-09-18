@@ -7,3 +7,10 @@ coverage/
 src-tauri/target/
 src-tauri/gen/schemas/
 release/
+save/
+data/
+
+# Personal university/company artwork belongs to local saves, not the repository.
+assets/enterprise/Logo/
+assets/university/Logo/
+assets/logo/

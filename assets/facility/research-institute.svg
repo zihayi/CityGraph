@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 256 256">
+  <g fill="none" stroke="currentColor" stroke-width="9">
+    <ellipse cx="128" cy="64" rx="52" ry="19"/>
+    <ellipse cx="128" cy="64" rx="52" ry="19" transform="rotate(60 128 64)"/>
+    <ellipse cx="128" cy="64" rx="52" ry="19" transform="rotate(120 128 64)"/>
+  </g>
+  <circle cx="128" cy="64" r="9" fill="currentColor"/>
+  <path fill="currentColor" fill-rule="evenodd" d="M44 112h168v112h20v16H24v-16h20V112Zm24 24v32h32v-32H68Zm44 0v32h32v-32h-32Zm44 0v32h32v-32h-32Zm-44 48v40h32v-40h-32Z"/>
+</svg>

@@ -1,0 +1,61 @@
+.district-profile { display: grid; gap: 12px; padding: 16px; color: #edf4f5; }
+.district-hero { display: grid; grid-template-columns: 46px minmax(0, 1fr); align-items: center; gap: 12px; padding: 3px 2px 16px; border-bottom: 1px solid rgb(181 163 124 / 24%); }
+.district-hero-icon { display: grid; width: 46px; height: 46px; place-items: center; border: 1px solid rgb(211 182 125 / 30%); border-radius: 12px; background: rgb(178 138 69 / 12%); color: #dec38f; }
+.district-hero small { color: #a1b6bd; font-size: 10px; }
+.district-hero h2 { margin: 4px 0 0; font-size: 21px; font-weight: 650; overflow-wrap: anywhere; }
+.district-area { grid-column: 1 / -1; display: grid; gap: 6px; margin-top: 8px; }
+.district-area > span { color: #b7c8cd; font-size: 11px; }
+.district-area > strong { color: #f2e2c3; font-size: clamp(22px, 2.5vw, 29px); font-weight: 550; letter-spacing: -.8px; font-variant-numeric: tabular-nums; }
+.district-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.district-metrics a { display: grid; min-width: 0; justify-items: start; gap: 7px; border: 1px solid rgb(129 167 178 / 20%); border-radius: 9px; padding: 11px 8px; background: rgb(22 50 61 / 42%); color: #a8c2c8; text-decoration: none; }
+.district-metrics a:hover { border-color: #cab183; background: rgb(97 78 43 / 18%); }
+.district-metrics strong { color: #f1f6f6; font-size: 23px; font-weight: 550; font-variant-numeric: tabular-nums; }
+.district-metrics span { font-size: 10px; }
+.district-valuation { display: grid; gap: 10px; border: 1px solid rgb(69 181 166 / 30%); border-radius: 10px; padding: 16px; background: linear-gradient(110deg, rgb(21 96 85 / 32%), rgb(8 33 43 / 20%)); }
+.district-valuation > div { display: flex; align-items: center; gap: 8px; color: #a9d7cc; font-size: 11px; }
+.district-valuation > strong { color: #b0eee0; font-size: 22px; font-weight: 550; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.district-valuation > small { color: #a8bdc0; font-size: 10px; line-height: 1.6; }
+.district-value-warning { display: flex; align-items: center; gap: 6px; margin: 0; color: #e9c590; font-size: 10px; }
+.district-gdp-summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; padding: 2px 2px 6px; font-size: 11px; }
+.district-gdp-summary span { color: #9eb5bc; }
+.district-gdp-summary strong { font-weight: 500; }
+.district-directory { overflow: hidden; border: 1px solid rgb(129 167 178 / 23%); border-radius: 10px; background: rgb(7 30 41 / 36%); scroll-margin-block: 12px; }
+.district-directory > summary { display: flex; min-height: 47px; align-items: center; gap: 9px; padding: 0 13px; list-style: none; cursor: pointer; color: #adbec5; }
+.district-directory > summary::-webkit-details-marker, .district-method > summary::-webkit-details-marker { display: none; }
+.district-directory > summary h3 { flex: 1; margin: 0; color: #e7f0f3; font-size: 12px; font-weight: 550; }
+.district-directory > summary b { color: #a8bcc4; font-size: 11px; font-weight: 500; }
+.district-directory > summary > svg:last-child { transition: transform 150ms ease; }
+.district-directory[open] > summary { border-bottom: 1px solid rgb(129 167 178 / 16%); }
+.district-directory[open] > summary > svg:last-child { transform: rotate(90deg); }
+.district-directory-body { padding: 5px 8px; }
+.district-entity-row { display: flex; width: 100%; min-width: 0; align-items: center; gap: 9px; padding: 10px 3px; border: 0; border-bottom: 1px solid rgb(129 167 178 / 12%); background: transparent; color: #ecf4f5; text-align: left; cursor: pointer; }
+.district-entity-row:last-child { border-bottom: 0; }
+.district-entity-row:hover, .district-place-row:hover { background: rgb(81 157 163 / 12%); }
+.district-entity-logo { display: grid; width: 32px; height: 32px; flex: 0 0 32px; place-items: center; overflow: hidden; border-radius: 7px; background: #f0f4f3; color: #507a85; }
+.district-entity-logo img { width: 100%; height: 100%; object-fit: contain; }
+.district-entity-row > span:nth-child(2) { display: grid; min-width: 0; flex: 1; gap: 5px; }
+.district-entity-row strong { font-size: 11px; font-weight: 550; overflow-wrap: anywhere; }
+.district-entity-row small { font-size: 10px; color: #9fb5be; overflow-wrap: anywhere; }
+.district-entity-row > svg { flex-shrink: 0; color: #90a8b1; }
+.district-entity-value { max-width: 40%; color: #9fe0cf; font-size: 10px; text-align: right; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.district-empty { margin: 10px 4px; color: #9bb2bc; font-size: 11px; line-height: 1.7; }
+.district-type-group { padding: 4px 0; }
+.district-type-group h4 { display: flex; justify-content: space-between; margin: 0; padding: 7px 5px; color: #98b1bc; font-size: 10px; font-weight: 500; }
+.district-place-row { display: flex; width: 100%; align-items: center; gap: 9px; border: 0; border-radius: 5px; padding: 9px 6px; background: transparent; color: #dae8eb; cursor: pointer; text-align: left; }
+.district-place-row i { width: 8px; height: 8px; flex-shrink: 0; border-radius: 2px; }
+.district-place-row span { flex: 1; font-size: 11px; overflow-wrap: anywhere; }
+.district-method { padding: 2px; color: #9aafb8; font-size: 10px; }
+.district-method summary { display: flex; align-items: center; gap: 6px; width: fit-content; list-style: none; cursor: pointer; }
+.district-method p { margin-bottom: 0; line-height: 1.8; }
+.district-delete-confirm { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.district-delete-confirm p { grid-column: 1 / -1; color: #e3b3b3; font-size: 11px; line-height: 1.6; }
+.district-profile :is(a, button, summary):focus-visible { outline: 2px solid #74d6ce; outline-offset: -2px; border-radius: 5px; }
+@media (max-width: 560px) {
+  .district-profile { padding: 12px; }
+  .district-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .district-metrics a { grid-template-columns: 18px 1fr; align-items: center; }
+  .district-metrics a strong { grid-row: span 2; justify-self: end; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .district-directory > summary > svg:last-child { transition: none; }
+}

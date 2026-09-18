@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { City } from "../model/City";
+import type { City, RoadEdge } from "../model/City";
 import { Editor } from "./Editor";
 import { buildRoadCreation, splitRoadEdge } from "./RoadGraph";
 import { connectedRoadEdgeComponents, roadIdentityGroupEdges, selectedRoadEdges } from "./RoadIdentity";
 
 function emptyCity(): City {
-  return { id: "identity", name: "Identity", bounds: { x: -200, y: -200, width: 800, height: 800 }, mapSize: "small", terrain: "flat", roadNodes: [], roads: [], roadEdges: [], buildings: [], blocks: [], zones: [], parks: [], waters: [], pois: [], facilities: [], universities: [], transitLines: [], transitStations: [], busTerminals: [], busLines: [], busStops: [], labels: [] };
+  return { id: "identity", name: "Identity", bounds: { x: -200, y: -200, width: 800, height: 800 }, mapSize: "small", terrain: "flat", roadNodes: [], roads: [], roadEdges: [], buildings: [], blocks: [], zones: [], parks: [], districts: [], waters: [], pois: [], facilities: [], universities: [], hospitals: [], companies: [], transitLines: [], transitStations: [], busTerminals: [], busLines: [], busStops: [], labels: [] };
 }
 function add(city: City, start: { x: number; y: number }, end: { x: number; y: number }, name: string): City {
   const result = buildRoadCreation(city, { start, end, category: "normal", subtype: "small", width: 8, name, structure: "ground", geometry: { type: "line" } });
@@ -60,5 +60,33 @@ describe("road name identity groups", () => {
     let city = add(emptyCity(), { x: 0, y: 0 }, { x: 100, y: 0 }, "环湖路"); city = add(city, { x: 300, y: 0 }, { x: 400, y: 0 }, "环湖路"); const anchor = city.roadEdges[0]!;
     expect(selectedRoadEdges(city, { id: anchor.roadId, edgeId: anchor.id, scope: "logical" })).toHaveLength(2);
     expect(selectedRoadEdges(city, { id: anchor.roadId, edgeId: anchor.id, scope: "segment" })).toEqual([anchor]);
+  });
+});
+
+describe("connected road components", () => {
+  function edge(id: string, startNodeId: string, endNodeId: string): RoadEdge {
+    return { id, roadId: "road", name: "Road", startNodeId, endNodeId, structure: "ground", level: 0, geometry: { type: "line" } };
+  }
+
+  it("preserves component and edge input order across branches, cycles and self-loops", () => {
+    const edges = [edge("a2", "a2", "a3"), edge("b1", "b1", "b2"), edge("a0", "a0", "a1"), edge("loop", "alone", "alone"), edge("a1", "a1", "a2"), edge("b2", "b2", "b1"), edge("branch", "a1", "a4")];
+    const before = [...edges]; const components = connectedRoadEdgeComponents(edges);
+    expect(components.map((component) => component.map((entry) => entry.id))).toEqual([["a2", "a0", "a1", "branch"], ["b1", "b2"], ["loop"]]);
+    expect(components[0]![0]).toBe(edges[0]); expect(edges).toEqual(before);
+    expect(connectedRoadEdgeComponents([])).toEqual([]);
+  });
+
+  it("retains ID grouping when the input repeats an edge ID", () => {
+    const edges = [edge("same", "a", "b"), edge("other", "c", "d"), edge("same", "d", "e"), edge("separate", "f", "g")];
+    expect(connectedRoadEdgeComponents(edges)).toEqual([edges.slice(0, 3), [edges[3]]]);
+  });
+
+  it("traverses long reversed chains and high-degree junctions with linear endpoint reads", () => {
+    let reads = 0;
+    const chain = Array.from({ length: 500 }, (_, index) => ({ ...edge(`chain-${index}`, "", ""), get startNodeId() { reads += 1; return `n${index}`; }, get endNodeId() { reads += 1; return `n${index + 1}`; } })).reverse();
+    const star = Array.from({ length: 500 }, (_, index) => ({ ...edge(`star-${index}`, "", ""), get startNodeId() { reads += 1; return "hub"; }, get endNodeId() { reads += 1; return `spoke-${index}`; } }));
+    const components = connectedRoadEdgeComponents([...chain, ...star]);
+    expect(reads).toBeLessThanOrEqual(4 * (chain.length + star.length));
+    expect(components).toEqual([chain, star]);
   });
 });

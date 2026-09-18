@@ -67,6 +67,25 @@ export function sampleRoad(edge: RoadEdge, nodes: Map<string, RoadNode>, segment
   return Array.from({ length: segments + 1 }, (_, index) => bezierPoint(start, end, controls, index / segments));
 }
 
+export interface RoadBounds { minX: number; minY: number; maxX: number; maxY: number }
+
+/** Conservative centerline bounds, optionally expanded by a non-negative width/tolerance radius. No sampling or caching. */
+export function roadBounds(edge: RoadEdge, nodes: ReadonlyMap<string, RoadNode>, padding = 0): RoadBounds | undefined {
+  const start = nodes.get(edge.startNodeId);
+  const end = nodes.get(edge.endNodeId);
+  if (!start || !end) return undefined;
+  let minX = Math.min(start.x, end.x); let minY = Math.min(start.y, end.y);
+  let maxX = Math.max(start.x, end.x); let maxY = Math.max(start.y, end.y);
+  // Bezier curves stay in the convex hull of their endpoints and controls.
+  const points = edge.geometry.type === "bezier" ? edge.geometry.controlPoints : edge.geometry.type === "polyline" ? edge.geometry.points : [];
+  for (const point of points) {
+    minX = Math.min(minX, point.x); minY = Math.min(minY, point.y);
+    maxX = Math.max(maxX, point.x); maxY = Math.max(maxY, point.y);
+  }
+  const radius = Math.max(0, padding);
+  return { minX: minX - radius, minY: minY - radius, maxX: maxX + radius, maxY: maxY + radius };
+}
+
 export function roadDistance(point: Point, edge: RoadEdge, nodes: Map<string, RoadNode>): number {
   const samples = sampleRoad(edge, nodes);
   let nearest = Number.POSITIVE_INFINITY;

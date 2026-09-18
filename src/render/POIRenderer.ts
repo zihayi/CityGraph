@@ -1,5 +1,6 @@
 import { Container, Graphics, Text } from "pixi.js";
 import type { City, POI } from "../model/City";
+import type { EditorSelection } from "../editor/Editor";
 
 const poiStyle: Record<POI["type"], { color: number; glyph: string }> = {
   hospital: { color: 0xc95951, glyph: "+" },
@@ -12,15 +13,16 @@ const poiStyle: Record<POI["type"], { color: number; glyph: string }> = {
 };
 
 export class POIRenderer {
-  public render(city: City): Container {
+  public render(city: City, selection: EditorSelection = null): Container {
     const container = new Container();
+    const selectedIds = new Set(selection?.kind === "spatial-group" ? selection.items.filter((item) => item.kind === "poi").map((item) => item.id) : []);
 
     for (const poi of city.pois) {
       const style = poiStyle[poi.type];
-      const marker = new Graphics()
+      const selected = selectedIds.has(poi.id); const marker = new Graphics()
         .circle(poi.x, poi.y, 13)
-        .fill({ color: 0xffffff, alpha: 0.96 })
-        .stroke({ color: style.color, width: 2.5 });
+        .fill({ color: selected ? 0xd9eeff : 0xffffff, alpha: 0.96 })
+        .stroke({ color: selected ? 0x168cff : style.color, width: selected ? 4 : 2.5 });
       const glyph = new Text({
         text: style.glyph,
         style: { fontFamily: "Arial", fontSize: 14, fontWeight: "700", fill: style.color },

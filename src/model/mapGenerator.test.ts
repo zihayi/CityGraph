@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { pointInPolygon } from "../geometry/RoadGeometry";
-import { createNewCity, mapDimensions } from "./mapGenerator";
+import { canvasRenderBounds, createNewCity, mapDimensions } from "./mapGenerator";
 
 describe("createNewCity", () => {
   it("uses meter-scale world bounds and creates requested lakes inside them", () => {
@@ -20,5 +20,9 @@ describe("createNewCity", () => {
     expect(city.mapSize).toBe("unlimited");
     expect(city.bounds.x).toBeLessThan(0);
     expect(city.bounds.x + city.bounds.width).toBeGreaterThan(0);
+  });
+  it("keeps finite bounds while rendering an unlimited surface around their center", () => {
+    expect(canvasRenderBounds({ mapSize: "custom", bounds: { x: 10, y: 20, width: 300, height: 200 } })).toEqual({ x: 10, y: 20, width: 300, height: 200 });
+    expect(canvasRenderBounds({ mapSize: "unlimited", bounds: { x: 10, y: 20, width: 300, height: 200 } })).toEqual({ x: -499840, y: -499880, width: 1_000_000, height: 1_000_000 });
   });
 });

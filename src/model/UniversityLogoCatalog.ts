@@ -1,3 +1,5 @@
+import { customLogoUrl } from "../services/LogoStorage";
+
 export interface UniversityLogoAsset { key: string; name: string; url: string }
 
 const rootLogoModules = import.meta.glob<string>("../../assets/logo/*.{svg,png,jpg,jpeg,webp}", {
@@ -14,10 +16,18 @@ function createCatalog(modules: Record<string, string>, prefix: string, label: s
 
 const rootLogoCatalog = createCatalog(rootLogoModules, "", "Logo");
 export const universityLogoCatalog: UniversityLogoAsset[] = [...rootLogoCatalog, ...createCatalog(universityLogoModules, "university/", "University Logo")];
-export const alumniCompanyLogoCatalog: UniversityLogoAsset[] = [...rootLogoCatalog, ...createCatalog(companyLogoModules, "enterprise/", "Company Logo")];
+export const companyLogoCatalog: UniversityLogoAsset[] = [...rootLogoCatalog, ...createCatalog(companyLogoModules, "enterprise/", "Company Logo")];
+export const alumniCompanyLogoCatalog = companyLogoCatalog;
 const allLogoCatalog = [...universityLogoCatalog, ...alumniCompanyLogoCatalog];
 
-export function universityLogoUrl(reference: string): string | undefined {
+function logoUrl(reference: string, catalog: UniversityLogoAsset[]): string | undefined {
   if (reference.startsWith("data:image/")) return reference;
-  return allLogoCatalog.find((asset) => asset.key === reference)?.url;
+  if (reference.startsWith("custom-logo:")) return customLogoUrl(reference);
+  return catalog.find((asset) => asset.key === reference)?.url;
 }
+
+export function universityLogoUrl(reference: string): string | undefined {
+  return logoUrl(reference, allLogoCatalog);
+}
+
+export function companyLogoUrl(reference: string): string | undefined { return logoUrl(reference, companyLogoCatalog); }

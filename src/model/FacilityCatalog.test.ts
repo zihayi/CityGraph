@@ -8,10 +8,23 @@ describe("facility catalog", () => {
     expect(facilityCatalog.find((entry) => entry.type === "lab")?.icon).toBe("lab.svg");
     expect(facilityCatalog.find((entry) => entry.type === "theater")?.icon).toBe("theater.svg");
     expect(facilityCatalog.find((entry) => entry.type === "experience-hall")?.icon).toBe("experience-hall.svg");
+    expect(facilityCatalog.find((entry) => entry.type === "government-office")?.icon).toBe("government-office.svg");
+    expect(facilityCatalog.find((entry) => entry.type === "amusement-park")?.icon).toBe("amusement-park.svg");
+    expect(facilityCatalog.find((entry) => entry.type === "research-institute")?.icon).toBe("research-institute.svg");
+    expect(facilityCatalog.find((entry) => entry.type === "stadium")?.icon).toBe("stadium.svg");
     expect(facilityTypeName("company", "zh-CN")).toBe("公司");
     expect(facilityTypeName("lab", "zh-CN")).toBe("实验室");
     expect(facilityTypeName("theater", "zh-CN")).toBe("剧院");
     expect(facilityTypeName("experience-hall", "zh-CN")).toBe("体验馆");
+    expect(facilityTypeName("government-office", "zh-CN")).toBe("政府机关");
+    expect(facilityTypeName("amusement-park", "zh-CN")).toBe("游乐园");
+    expect(facilityTypeName("research-institute", "zh-CN")).toBe("研究所");
+    expect(facilityTypeName("stadium", "zh-CN")).toBe("体育场");
+    expect(facilityTypeName("amusement-park", "en-US")).toBe("Amusement Park");
+    expect(facilityTypeName("research-institute", "en-US")).toBe("Research Institute");
+    expect(facilityDefaultColor("research-institute")).toBe("#596fa3");
+    expect(facilityDefaultColor("government-office")).toBe("#66758a");
+    expect(facilityDefaultColor("stadium")).toBe("#3f8b73");
   });
 
   it("uses the current city palette as each facility type default", () => {

@@ -24,6 +24,7 @@ const universityIconModules = import.meta.glob<string>("../../assets/university/
 });
 
 const chineseNames: Record<string, string> = {
+  "amusement-park": "游乐园",
   bakery: "面包店",
   bar: "酒吧",
   bookstore: "书店",
@@ -46,6 +47,8 @@ const chineseNames: Record<string, string> = {
   parking: "停车场",
   "pet-shop": "宠物店",
   restaurant: "餐厅",
+  "research-institute": "研究所",
+  stadium: "体育场",
   store: "商店",
   supermarket: "超市",
   theater: "剧院",
@@ -59,6 +62,7 @@ const chineseNames: Record<string, string> = {
   "post-office": "邮局",
   "community-center": "社区中心",
   "experience-hall": "体验馆",
+  "government-office": "政府机关",
 };
 
 export function formatFacilityName(type: string): string {

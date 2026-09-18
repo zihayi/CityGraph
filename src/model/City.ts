@@ -1,6 +1,7 @@
 import type { Bounds, Point } from "../geometry/Point";
+import type { AIConfig, CityAISnapshot, CityEvent, DailyNewsIssue, EntityRelation, NewsArticle } from "./AI";
 
-export type MapSize = "small" | "medium" | "large" | "unlimited";
+export type MapSize = "small" | "medium" | "large" | "custom" | "unlimited";
 export type TerrainType = "flat" | "lakes";
 export type RoadCategory = "normal" | "pedestrian" | "highway";
 export type RoadSubtype = "large" | "medium" | "small" | "pedestrian" | "highway" | "ramp";
@@ -29,17 +30,40 @@ export type ZoneType =
   | "industrial"
   | "office"
   | "green"
+  | "tourism"
+  | "zoo"
+  | "amusement-park"
+  | "golf-course"
+  | "resort"
+  | "high-speed-rail-station"
+  | "train-station"
+  | "airport"
   | "mixed"
   | "custom"
   | "public";
 export type TransitType = "metro" | "train" | "bus";
+export type RailSystem = "train" | "metro";
 export type LabelType = "city" | "district" | "road" | "poi" | "custom";
+export interface OSMFeatureSource { type: "node" | "way" | "relation"; id: string; tags: Record<string, string> }
+
+export const economyCurrencies = ["CNY", "USD", "EUR", "JPY"] as const;
+export type Currency = typeof economyCurrencies[number];
+export const economyMonetaryUnits = ["one", "thousand", "million", "hundred-million", "billion"] as const;
+export type MonetaryUnit = typeof economyMonetaryUnits[number];
+
+export interface EconomySettings {
+  currency: Currency;
+  monetaryUnit: MonetaryUnit;
+}
+
+export const defaultEconomySettings: Readonly<EconomySettings> = Object.freeze({ currency: "CNY", monetaryUnit: "hundred-million" });
 
 export interface RoadNode extends Point {
   id: string;
 }
 
 export interface Road {
+  osm?: OSMFeatureSource;
   id: string;
   name: string;
   category: RoadCategory;
@@ -66,6 +90,7 @@ export interface BuildingFootprint {
 }
 
 export interface Building {
+  osm?: OSMFeatureSource;
   id: string;
   footprint: BuildingFootprint;
   type: BuildingType;
@@ -102,6 +127,39 @@ export function createEmptyUniversityProfile(): UniversityProfile {
   return { englishName: "", emblemDataUrl: "", motto: "", foundedYear: null, universityType: "", alumniCompanies: [], colleges: [], laboratories: [] };
 }
 
+export interface HospitalCampus {
+  id: string;
+  name: string;
+  address: string;
+}
+
+export interface HospitalProfile {
+  englishName: string;
+  ranking: number | null;
+  foundedYear: number | null;
+  grade: string;
+  hospitalType: string;
+  beds: number | null;
+  landArea: number | null;
+  specialties: string[];
+  campuses: HospitalCampus[];
+  description: string;
+}
+
+export function createEmptyHospitalProfile(zoneId: string): HospitalProfile {
+  return { englishName: "", ranking: null, foundedYear: null, grade: "", hospitalType: "", beds: null, landArea: null, specialties: [], campuses: [{ id: `hospital-campus-${zoneId}`, name: "", address: "" }], description: "" };
+}
+
+export interface Hospital extends Omit<HospitalProfile, "campuses"> {
+  id: string;
+  name: string;
+  affiliatedUniversityId?: string;
+}
+
+export function createEmptyHospital(id: string): Hospital {
+  return { id, name: "", englishName: "", ranking: null, foundedYear: null, grade: "", hospitalType: "", beds: null, landArea: null, specialties: [], description: "" };
+}
+
 export type UniversityType = "comprehensive" | "science-engineering" | "medical" | "finance" | "agriculture-forestry" | "arts" | "other";
 
 export interface AlumniCompany {
@@ -126,6 +184,7 @@ export interface University {
   logo: string;
   alumniCompanies: AlumniCompany[];
   landArea?: number;
+  operatingBudget?: number;
 }
 
 export function createEmptyUniversity(id: string): University {
@@ -133,6 +192,7 @@ export function createEmptyUniversity(id: string): University {
 }
 
 export interface Zone {
+  osm?: OSMFeatureSource;
   id: string;
   name?: string;
   type: ZoneType;
@@ -152,15 +212,40 @@ export interface Zone {
   areaOverride?: number;
   educationLevel?: EducationLevel;
   affiliatedUniversityId?: string;
+  hospitalId?: string;
+  hospitalCampusRole?: "main" | "branch";
+  hospital?: HospitalProfile;
 }
 
 export interface Park {
+  osm?: OSMFeatureSource;
   id: string;
   points: Point[];
   name?: string;
+  source: ZoneSource;
+  waterId?: string;
+  color: string;
+  opacity: number;
 }
 
+export const defaultLandscapingColor = "#76ad67";
+export const defaultLandscapingOpacity = 0.62;
+
+export interface District {
+  id: string;
+  name: string;
+  points: Point[];
+  description?: string;
+  gdp?: number;
+  gdpYear?: number;
+}
+
+export const districtFillColor = "#c9a66b";
+export const districtBorderColor = "#684b28";
+export const districtFillOpacity = 0.2;
+
 export interface WaterArea {
+  osm?: OSMFeatureSource;
   id: string;
   points: Point[];
   name?: string;
@@ -173,21 +258,50 @@ export interface POI extends Point {
 }
 
 export interface FacilityPOI {
+  osm?: OSMFeatureSource;
   id: string;
   type: string;
   name: string;
+  description?: string;
   position: Point;
   icon: string;
   color: string;
   universityZoneId?: string;
   affiliatedUniversityId?: string;
   universityAffiliationKind?: "hospital" | "facility";
+  companyId?: string;
+  isCompanyHeadquarters?: boolean;
+  company?: CompanyProfile;
+}
+
+export interface CompanyProfile {
+  logo: string;
+  description: string;
+  isHeadquarters: boolean;
+  marketValue: number | null;
+  marketValueRank: number | null;
+  alumniUniversityId?: string;
+  tags: string[];
+}
+
+export function createEmptyCompanyProfile(): CompanyProfile {
+  return { logo: "", description: "", isHeadquarters: false, marketValue: null, marketValueRank: null, tags: [] };
+}
+
+export interface Company extends Omit<CompanyProfile, "isHeadquarters"> {
+  id: string;
+  name: string;
+}
+
+export function createEmptyCompany(id: string): Company {
+  return { id, name: "", logo: "", description: "", marketValue: null, marketValueRank: null, tags: [] };
 }
 
 export const defaultFacilityColor = "#2d9f9b";
 
 export const defaultFacilityColors: Record<string, string> = {
   administration: "#647b9b",
+  "amusement-park": "#d45f8c",
   bakery: "#ab8f03",
   bar: "#dcb7d4",
   bookstore: "#9f702d",
@@ -206,6 +320,8 @@ export const defaultFacilityColors: Record<string, string> = {
   parking: "#5389d0",
   "pet-shop": "#c4b464",
   restaurant: "#f09833",
+  "research-institute": "#596fa3",
+  stadium: "#3f8b73",
   canteen: "#c77942",
   "campus-clinic": "#ad747a",
   "student-center": "#3d8f9a",
@@ -222,6 +338,7 @@ export const defaultFacilityColors: Record<string, string> = {
   "post-office": "#b58a35",
   "community-center": "#4f8f91",
   "experience-hall": "#a1668b",
+  "government-office": "#66758a",
 };
 
 export function facilityDefaultColor(type: string): string {
@@ -239,6 +356,46 @@ export interface TransitLine {
   name: string;
   color: number;
   stationIds: string[];
+}
+
+export interface RailNode extends Point {
+  id: string;
+  system: RailSystem;
+}
+
+export type RailTrackGeometry =
+  | { type: "line" }
+  | { type: "bezier"; controlPoints: [Point] };
+
+export interface RailTrack {
+  id: string;
+  system: RailSystem;
+  startNodeId: string;
+  endNodeId: string;
+  structure: RoadStructure;
+  geometry?: RailTrackGeometry;
+}
+
+export interface RailStation {
+  id: string;
+  system: RailSystem;
+  name: string;
+  nodeId: string;
+}
+
+export interface RailPathStep {
+  trackId: string;
+  forward: boolean;
+}
+
+export interface RailLine {
+  id: string;
+  system: RailSystem;
+  name: string;
+  color: string;
+  stationIds: string[];
+  path: RailPathStep[];
+  loop: boolean;
 }
 
 export interface BusTerminal {
@@ -289,9 +446,13 @@ export interface MapLabel extends Point {
 export interface City {
   id: string;
   name: string;
+  mapSource?: { type: "osm"; latitude: number; longitude: number };
+  osmAttribution?: boolean;
   bounds: Bounds;
   mapSize: MapSize;
   terrain: TerrainType;
+  /** Initialized by city creation, loading, or Editor for legacy in-memory cities. */
+  economy?: EconomySettings;
   roads: Road[];
   roadEdges: RoadEdge[];
   roadNodes: RoadNode[];
@@ -299,14 +460,29 @@ export interface City {
   blocks: Block[];
   zones: Zone[];
   universities: University[];
+  hospitals: Hospital[];
   parks: Park[];
+  districts: District[];
   waters: WaterArea[];
   pois: POI[];
   facilities: FacilityPOI[];
+  companies: Company[];
   transitLines: TransitLine[];
   transitStations: TransitStation[];
+  /** Initialized by city creation, loading, or Editor for legacy in-memory cities. */
+  railNodes?: RailNode[];
+  railTracks?: RailTrack[];
+  railStations?: RailStation[];
+  railLines?: RailLine[];
+  metroLogo?: string;
   busTerminals: BusTerminal[];
   busLines: BusLine[];
   busStops: BusStop[];
   labels: MapLabel[];
+  aiConfig?: AIConfig;
+  cityEvents?: CityEvent[];
+  entityRelations?: EntityRelation[];
+  newsArticles?: NewsArticle[];
+  dailyNewsIssues?: DailyNewsIssue[];
+  aiSnapshot?: CityAISnapshot;
 }

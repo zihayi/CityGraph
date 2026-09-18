@@ -1,8 +1,7 @@
 import { Container, Graphics } from "pixi.js";
 import type { EditorSelection } from "../editor/Editor";
 import type { Point } from "../geometry/Point";
-import type { City, RoadEdge, RoadNode, RoadSubtype } from "../model/City";
-import { selectedRoadEdge, selectedRoadEdges } from "../editor/RoadIdentity";
+import type { City, Road, RoadEdge, RoadNode, RoadSubtype } from "../model/City";
 
 const subtypeColor: Record<RoadSubtype, number> = {
   large: 0xfdfcf8, medium: 0xfbfaf6, small: 0xf8f7f2,
@@ -32,50 +31,91 @@ function drawDashedPath(graphics: Graphics, points: Point[], dashLength: number,
   }
 }
 
+export class RoadRenderIndex {
+  public readonly nodes: Map<string, RoadNode>;
+  public readonly roads: Map<string, Road>;
+  public readonly edges = new Map<string, RoadEdge>();
+  public readonly firstByRoad = new Map<string, RoadEdge>();
+  public readonly named = new Map<string, RoadEdge[]>();
+  public readonly unnamed = new Map<string, RoadEdge[]>();
+  public readonly incident = new Map<string, RoadEdge[]>();
+  public readonly edgeOrder = new Map<string, number>();
+  public readonly nodeOrder = new Map<string, number>();
+
+  public constructor(city: City) {
+    this.nodes = new Map(city.roadNodes.map((node, index) => { this.nodeOrder.set(node.id, index); return [node.id, node]; }));
+    this.roads = new Map(city.roads.map((road) => [road.id, road]));
+    city.roadEdges.forEach((edge, index) => {
+      this.edges.set(edge.id, edge); this.edgeOrder.set(edge.id, index);
+      if (!this.firstByRoad.has(edge.roadId)) this.firstByRoad.set(edge.roadId, edge);
+      const groups = edge.name.trim().length ? this.named : this.unnamed;
+      const key = edge.name.trim().length ? edge.name : edge.roadId;
+      const group = groups.get(key) ?? []; group.push(edge); groups.set(key, group);
+      for (const nodeId of new Set([edge.startNodeId, edge.endNodeId])) { const incident = this.incident.get(nodeId) ?? []; incident.push(edge); this.incident.set(nodeId, incident); }
+    });
+  }
+
+  public selectedEdges(selection: EditorSelection): RoadEdge[] {
+    if (selection?.kind === "road") {
+      const anchor = selection.edgeId ? this.edges.get(selection.edgeId) : this.firstByRoad.get(selection.id);
+      if (!anchor) return [];
+      return selection.scope === "segment" ? [anchor] : (anchor.name.trim().length ? this.named.get(anchor.name) : this.unnamed.get(anchor.roadId)) ?? [];
+    }
+    const ids = selection?.kind === "road-control" ? [selection.id] : selection?.kind === "road-multi" ? selection.edgeIds : selection?.kind === "spatial-group" ? selection.items.filter((item) => item.kind === "road-edge").map((item) => item.id) : [];
+    return [...new Set(ids)].flatMap((id) => { const edge = this.edges.get(id); return edge ? [edge] : []; }).sort((a, b) => this.edgeOrder.get(a.id)! - this.edgeOrder.get(b.id)!);
+  }
+}
+
 export class RoadRenderer {
   public render(city: City, selection: EditorSelection = null, editable = false, zoom = 1): Container {
-    const container = new Container();
-    const nodes = new Map<string, RoadNode>(city.roadNodes.map((node) => [node.id, node]));
-    const roads = new Map(city.roads.map((road) => [road.id, road]));
-    const selectedAnchor = selection?.kind === "road" ? selectedRoadEdge(city, selection) : selection?.kind === "road-control" ? city.roadEdges.find((edge) => edge.id === selection.id) : selection?.kind === "road-multi" ? city.roadEdges.find((edge) => selection.edgeIds.includes(edge.id)) : undefined;
-    const selectedList = selection?.kind === "road" ? selectedRoadEdges(city, selection) : selection?.kind === "road-multi" ? city.roadEdges.filter((edge) => selection.edgeIds.includes(edge.id)) : selectedAnchor ? [selectedAnchor] : [];
-    const selectedEdgeIds = new Set(selectedList.map((edge) => edge.id));
+    const index = this.createIndex(city); const container = this.renderBase(index);
+    return this.renderDecoration(index, selection, editable, zoom, container);
+  }
+
+  public createIndex(city: City): RoadRenderIndex { return new RoadRenderIndex(city); }
+
+  public renderBase(index: RoadRenderIndex): Container {
+    const container = new Container(); const { nodes, roads } = index;
 
     for (const structure of ["tunnel", "ground", "elevated"] as const) {
       const structureLayer = new Container();
       const borders = new Container();
       const surfaces = new Container();
-      for (const edge of city.roadEdges.filter((candidate) => candidate.structure === structure)) {
+      const borderGroups = new Map<string, { graphics: Graphics; width: number; cap: "butt" | "round"; alpha: number }>();
+      const surfaceGroups = new Map<string, { graphics: Graphics; width: number; color: number; cap: "butt" | "round"; alpha: number }>();
+      for (const edge of index.edges.values()) {
+        if (edge.structure !== structure) continue;
         const road = roads.get(edge.roadId);
         const start = nodes.get(edge.startNodeId);
         const end = nodes.get(edge.endNodeId);
         if (!road || !start || !end) continue;
         const structureAlpha = structure === "tunnel" ? 0.52 : structure === "elevated" ? 0.9 : 1;
         const cap = structure === "elevated" ? "butt" : "round";
-        const border = new Graphics();
-        drawPath(border, edge, start, end);
-        border.stroke({ color: structure === "elevated" ? 0x7f9097 : 0xaeb2b2, width: road.width + 5, cap, join: "round", alpha: structureAlpha });
-        borders.addChild(border);
-        const surface = new Graphics();
-        drawPath(surface, edge, start, end);
-        surface.stroke({ color: subtypeColor[road.subtype], width: road.width, cap, join: "round", alpha: structureAlpha });
-        surfaces.addChild(surface);
+        const borderKey = `${road.width}:${cap}:${structureAlpha}`; let border = borderGroups.get(borderKey); if (!border) { border = { graphics: new Graphics(), width: road.width + 5, cap, alpha: structureAlpha }; borderGroups.set(borderKey, border); }
+        drawPath(border.graphics, edge, start, end);
+        const surfaceKey = `${road.subtype}:${road.width}:${cap}:${structureAlpha}`; let surface = surfaceGroups.get(surfaceKey); if (!surface) { surface = { graphics: new Graphics(), width: road.width, color: subtypeColor[road.subtype], cap, alpha: structureAlpha }; surfaceGroups.set(surfaceKey, surface); }
+        drawPath(surface.graphics, edge, start, end);
       }
+      for (const group of borderGroups.values()) borders.addChild(group.graphics.stroke({ color: structure === "elevated" ? 0x7f9097 : 0xaeb2b2, width: group.width, cap: group.cap, join: "round", alpha: group.alpha }));
+      for (const group of surfaceGroups.values()) surfaces.addChild(group.graphics.stroke({ color: group.color, width: group.width, cap: group.cap, join: "round", alpha: group.alpha }));
       structureLayer.addChild(borders, surfaces);
       container.addChild(structureLayer);
     }
+    return container;
+  }
 
-    for (const edge of city.roadEdges) {
+  public renderDecoration(index: RoadRenderIndex, selection: EditorSelection, editable = false, zoom = 1, container = new Container({ label: "road-decoration" })): Container {
+    const { nodes, roads } = index;
+    const selectedList = index.selectedEdges(selection);
+    const selectionGroups = new Map<number, Graphics>();
+    for (const edge of selectedList) {
       const road = roads.get(edge.roadId);
       const start = nodes.get(edge.startNodeId);
       const end = nodes.get(edge.endNodeId);
       if (!road || !start || !end) continue;
-      if ((selection?.kind === "road" || selection?.kind === "road-multi" || selection?.kind === "road-control") && selectedEdgeIds.has(edge.id)) {
-        const selected = new Graphics(); drawPath(selected, edge, start, end);
-        selected.stroke({ color: 0x168cff, width: Math.max(5, road.width * 0.24), alpha: 1, cap: "round" });
-        container.addChild(selected);
-      }
+      const width = Math.max(5, road.width * 0.24); let selected = selectionGroups.get(width); if (!selected) { selected = new Graphics(); selectionGroups.set(width, selected); } drawPath(selected, edge, start, end);
     }
+    for (const [width, selected] of selectionGroups) container.addChild(selected.stroke({ color: 0x168cff, width, alpha: 1, cap: "round" }));
 
     if (editable && selection) {
       for (const edge of selectedList) {
@@ -87,11 +127,14 @@ export class RoadRenderer {
         points.forEach((point, pointIndex) => { const active = selection.kind === "road-control" && selection.id === edge.id && selection.pointIndex === pointIndex; container.addChild(new Graphics().circle(point.x, point.y, (active ? 9 : 7) / zoom).fill({ color: 0xffffff, alpha: 0.12 }).stroke({ color: active ? 0xff9f43 : 0x168cff, width: (active ? 3 : 2.5) / zoom })); });
       }
       const visibleNodeIds = selection.kind === "node" ? new Set([selection.id]) : new Set([...selectedList.flatMap((edge) => [edge.startNodeId, edge.endNodeId]), ...(selection.kind === "road-multi" ? selection.nodeIds : [])]);
-      for (const node of city.roadNodes) {
-        if (!visibleNodeIds.has(node.id)) continue;
-        const connectedEdge = selectedList.find((edge) => edge.startNodeId === node.id || edge.endNodeId === node.id) || city.roadEdges.find((edge) => edge.startNodeId === node.id || edge.endNodeId === node.id);
+      const selectedIncident = new Map<string, RoadEdge>();
+      const activeNodeIds = new Set(selection.kind === "road-multi" ? selection.nodeIds : selection.kind === "node" ? [selection.id] : []);
+      for (const edge of selectedList) for (const id of [edge.startNodeId, edge.endNodeId]) if (!selectedIncident.has(id)) selectedIncident.set(id, edge);
+      for (const id of [...visibleNodeIds].sort((a, b) => (index.nodeOrder.get(a) ?? 0) - (index.nodeOrder.get(b) ?? 0))) {
+        const node = nodes.get(id); if (!node) continue;
+        const connectedEdge = selectedIncident.get(id) ?? index.incident.get(id)?.[0];
         const connectedWidth = roads.get(connectedEdge?.roadId ?? "")?.width ?? 12;
-        const active = selection.kind === "node" && selection.id === node.id || selection.kind === "road-multi" && selection.nodeIds.includes(node.id); const radius = Math.max(7, Math.min(10, connectedWidth * 0.48)) / zoom;
+        const active = activeNodeIds.has(node.id); const radius = Math.max(7, Math.min(10, connectedWidth * 0.48)) / zoom;
         const handle = new Graphics().circle(node.x, node.y, radius).fill({ color: active ? 0xff9f43 : 0x168cff }).stroke({ color: 0xffffff, width: 2.5 / zoom });
         container.addChild(handle);
       }

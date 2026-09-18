@@ -1,5 +1,5 @@
 import type { Point } from "../../geometry/Point";
-import { zoneLabelPoint } from "../../geometry/ZoneGeometry";
+import { waterDisplayGroups } from "../../geometry/WaterDisplayGeometry";
 import type { CameraState } from "../../map/MapViewport";
 import type { City } from "../../model/City";
 
@@ -9,10 +9,11 @@ function toScreen(point: Point, camera: CameraState): Point {
 }
 
 export function WaterLabelOverlay({ city, camera }: { city: City; camera: CameraState }) {
-  return <svg className="water-label-overlay" aria-hidden="true">{city.waters.map((water) => {
-    const name = water.name?.trim(); if (!name) return null;
-    const center = zoneLabelPoint(water.points); if (!center) return null;
-    const screen = toScreen(center, camera);
-    return <text key={water.id} x={screen.x} y={screen.y}>{name}</text>;
+  const labels = waterDisplayGroups(city.waters);
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth; const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+  return <svg className="water-label-overlay" aria-hidden="true">{labels.map((label) => {
+    if (!label.label) return null;
+    const screen = toScreen(label.label, camera); if (screen.x < -220 || screen.y < -100 || screen.x > viewportWidth + 220 || screen.y > viewportHeight + 100) return null;
+    return <text key={label.id} x={screen.x} y={screen.y}>{label.name}</text>;
   })}</svg>;
 }

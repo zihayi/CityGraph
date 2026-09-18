@@ -1,14 +1,15 @@
 import { Container, Graphics, Text } from "pixi.js";
 import type { TransportSystem } from "../app/store/editorStore";
 import type { EditorSelection } from "../editor/Editor";
-import type { City, TransitStation } from "../model/City";
+import type { City, RailSystem, TransitStation } from "../model/City";
 import { BusRenderer } from "./BusRenderer";
+import { RailRenderer } from "./RailRenderer";
 
 export class TransitRenderer {
   public render(city: City, selection: EditorSelection = null, camera = { zoom: 1, rotation: 0 }, showLines = false, transportSystem?: TransportSystem): Container {
     const container = new Container();
     const stations = new Map<string, TransitStation>(city.transitStations.map((station) => [station.id, station]));
-    const legacyType = transportSystem === "metro" ? "metro" : transportSystem === "bus" ? "bus" : undefined;
+    const legacyType = transportSystem === "metro" ? "metro" : transportSystem === "bus" ? "bus" : transportSystem === "train" ? "train" : undefined;
 
     for (const line of showLines && legacyType ? city.transitLines.filter((candidate) => candidate.stationIds.some((stationId) => stations.get(stationId)?.type === legacyType)) : []) {
       const path = new Graphics();
@@ -43,6 +44,8 @@ export class TransitRenderer {
     }
 
     if (city.busLines?.length || city.busTerminals?.length || city.busStops?.length) container.addChild(new BusRenderer().render(city, selection, camera, showLines && transportSystem === "bus"));
+    const railSystem: RailSystem = transportSystem === "metro" ? "metro" : "train";
+    container.addChild(new RailRenderer().render(city, selection, camera, showLines && (transportSystem === "train" || transportSystem === "metro"), railSystem));
 
     return container;
   }

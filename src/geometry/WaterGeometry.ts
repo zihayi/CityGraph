@@ -3,6 +3,7 @@ import { smoothClosedPolygon, type PolygonEdgeStyle } from "./Polygon";
 import { segmentIntersection } from "./Segment";
 
 const EPSILON = 1e-5;
+const RIVER_MITER_LIMIT = 4;
 
 export function waterArea(points: readonly Point[]): number {
   let sum = 0;
@@ -50,6 +51,44 @@ export function createIrregularLakeInRectangle(first: Point, opposite: Point, se
   const xs = raw.map((point) => point.x); const ys = raw.map((point) => point.y); const rawMinX = Math.min(...xs); const rawMaxX = Math.max(...xs); const rawMinY = Math.min(...ys); const rawMaxY = Math.max(...ys);
   const polygon = raw.map((point) => ({ x: minX + (point.x - rawMinX) / (rawMaxX - rawMinX) * (maxX - minX), y: minY + (point.y - rawMinY) / (rawMaxY - rawMinY) * (maxY - minY) }));
   return edgeStyle === "smooth" ? smoothClosedPolygon(polygon, 1) : polygon;
+}
+
+export function createRiverPolygon(centerline: readonly Point[], width: number, edgeStyle: PolygonEdgeStyle = "straight"): Point[] {
+  if (!Number.isFinite(width) || width <= 0 || centerline.some((point) => !Number.isFinite(point.x) || !Number.isFinite(point.y))) return [];
+  const points = centerline.filter((point, index) => index === 0 || Math.hypot(point.x - centerline[index - 1]!.x, point.y - centerline[index - 1]!.y) >= EPSILON).map((point) => ({ ...point }));
+  if (points.length < 2) return [];
+
+  const halfWidth = width / 2;
+  const tangents = points.slice(1).map((point, index) => {
+    const previous = points[index]!; const length = Math.hypot(point.x - previous.x, point.y - previous.y);
+    return { x: (point.x - previous.x) / length, y: (point.y - previous.y) / length };
+  });
+  const bank = (side: 1 | -1): Point[] => {
+    const firstTangent = tangents[0]!; const lastTangent = tangents.at(-1)!;
+    const result: Point[] = [{ x: points[0]!.x - firstTangent.y * halfWidth * side, y: points[0]!.y + firstTangent.x * halfWidth * side }];
+    for (let index = 1; index < points.length - 1; index += 1) {
+      const point = points[index]!; const previous = tangents[index - 1]!; const next = tangents[index]!;
+      const previousOffset = { x: point.x - previous.y * halfWidth * side, y: point.y + previous.x * halfWidth * side };
+      const nextOffset = { x: point.x - next.y * halfWidth * side, y: point.y + next.x * halfWidth * side };
+      const denominator = previous.x * next.y - previous.y * next.x;
+      if (Math.abs(denominator) >= EPSILON) {
+        const dx = nextOffset.x - previousOffset.x; const dy = nextOffset.y - previousOffset.y;
+        const alongPrevious = (dx * next.y - dy * next.x) / denominator;
+        const miter = { x: previousOffset.x + previous.x * alongPrevious, y: previousOffset.y + previous.y * alongPrevious };
+        const outerBank = denominator * side < 0;
+        if (!outerBank || Math.hypot(miter.x - point.x, miter.y - point.y) <= halfWidth * RIVER_MITER_LIMIT) { result.push(miter); continue; }
+      } else if (previous.x * next.x + previous.y * next.y > 0) { result.push(nextOffset); continue; }
+      result.push(previousOffset, nextOffset);
+    }
+    result.push({ x: points.at(-1)!.x - lastTangent.y * halfWidth * side, y: points.at(-1)!.y + lastTangent.x * halfWidth * side });
+    return result;
+  };
+  const polygon = [...bank(1), ...bank(-1).reverse()].filter((point, index, all) => index === 0 || Math.hypot(point.x - all[index - 1]!.x, point.y - all[index - 1]!.y) >= EPSILON);
+  if (polygon.length > 1 && Math.hypot(polygon[0]!.x - polygon.at(-1)!.x, polygon[0]!.y - polygon.at(-1)!.y) < EPSILON) polygon.pop();
+  if (!isValidWaterPolygon(polygon)) return [];
+  if (edgeStyle !== "smooth") return polygon;
+  const smoothed = smoothClosedPolygon(polygon, 1);
+  return isValidWaterPolygon(smoothed) ? smoothed : polygon;
 }
 
 function formatValue(value: number): string { return value >= 100 ? value.toFixed(0) : value >= 10 ? value.toFixed(1).replace(/\.0$/, "") : value.toFixed(2).replace(/0+$/, "").replace(/\.$/, ""); }

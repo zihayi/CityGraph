@@ -39,6 +39,21 @@ export interface BusStopGeometry {
   tangent: Point;
 }
 
+export function isBusRoadEdge(city: City, roadEdgeId: string): boolean {
+  const edge = city.roadEdges.find((candidate) => candidate.id === roadEdgeId);
+  const road = edge ? city.roads.find((candidate) => candidate.id === edge.roadId) : undefined;
+  return Boolean(road && road.category !== "pedestrian" && road.subtype !== "pedestrian");
+}
+
+export function busStopsShareStation(left: Pick<BusStop, "roadEdgeId" | "fraction" | "side">, right: Pick<BusStop, "roadEdgeId" | "fraction" | "side">): boolean {
+  return left.roadEdgeId === right.roadEdgeId && left.side === right.side && Math.abs(left.fraction - right.fraction) <= ROUTE_EPSILON;
+}
+
+export function busStationLines(city: City, stop: Pick<BusStop, "roadEdgeId" | "fraction" | "side">): BusLine[] {
+  const lineIds = new Set((city.busStops ?? []).filter((candidate) => busStopsShareStation(candidate, stop)).map((candidate) => candidate.lineId));
+  return (city.busLines ?? []).filter((line) => lineIds.has(line.id));
+}
+
 function unitTangent(start: Point, end: Point): Point {
   const dx = end.x - start.x;
   const dy = end.y - start.y;
@@ -195,6 +210,7 @@ export function pointAtRoadFraction(edge: RoadEdge, nodes: Map<string, RoadNode>
 
 export function routeBetweenBusStops(city: City, from: BusStopRoadLocation, to: BusStopRoadLocation): BusPathStep[] | undefined {
   if (!Number.isFinite(from.fraction) || !Number.isFinite(to.fraction)) return undefined;
+  if (!isBusRoadEdge(city, from.roadEdgeId) || !isBusRoadEdge(city, to.roadEdgeId)) return undefined;
   const fromFraction = clampFraction(from.fraction);
   const toFraction = clampFraction(to.fraction);
   const edges = new Map(city.roadEdges.map((edge) => [edge.id, edge]));
@@ -202,10 +218,12 @@ export function routeBetweenBusStops(city: City, from: BusStopRoadLocation, to: 
   const fromEdge = edges.get(from.roadEdgeId);
   const toEdge = edges.get(to.roadEdgeId);
   if (!fromEdge || !toEdge) return undefined;
+  const busRoadIds = new Set(city.roads.filter((road) => road.category !== "pedestrian" && road.subtype !== "pedestrian").map((road) => road.id));
 
   const edgeLengths = new Map<string, number>();
   const graph = new Map<string, RoadTraversal[]>();
   for (const edge of city.roadEdges) {
+    if (!busRoadIds.has(edge.roadId)) continue;
     if (!nodes.has(edge.startNodeId) || !nodes.has(edge.endNodeId)) continue;
     const road = sampledRoad(edge, nodes);
     if (road.points.length < 2 || !Number.isFinite(road.total)) continue;
@@ -321,6 +339,16 @@ export function busStopGeometry(city: City, stop: BusStop): BusStopGeometry {
     stopPoint: { x: location.point.x + normal.x * offset, y: location.point.y + normal.y * offset },
     tangent: location.tangent,
   };
+}
+
+export function nearestBusStop(city: City, point: Point, maxDistance: number): BusStop | undefined {
+  if (!Number.isFinite(maxDistance) || maxDistance < 0) return undefined;
+  let nearest: { stop: BusStop; distance: number } | undefined;
+  for (const stop of city.busStops ?? []) {
+    const candidateDistance = distance(point, busStopGeometry(city, stop).stopPoint);
+    if (candidateDistance <= maxDistance && (!nearest || candidateDistance < nearest.distance)) nearest = { stop, distance: candidateDistance };
+  }
+  return nearest?.stop;
 }
 
 export function busPathDistance(point: Point, city: City, line: BusLine): number {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { BusLine, BusPathStep, BusStop, City, RoadEdge, RoadNode } from "../model/City";
-import { busPathDistance, busStopGeometry, locatePointOnRoad, pointAtRoadFraction, routeBetweenBusStops, routeBusStopLoop, sampleDirectedBusPath, sampleDirectedBusPathSegments } from "./BusGeometry";
+import { busPathDistance, busStationLines, busStopGeometry, busStopsShareStation, isBusRoadEdge, locatePointOnRoad, nearestBusStop, pointAtRoadFraction, routeBetweenBusStops, routeBusStopLoop, sampleDirectedBusPath, sampleDirectedBusPathSegments } from "./BusGeometry";
 
 const nodes: RoadNode[] = [
   { id: "a", x: 0, y: 0 },
@@ -66,6 +66,17 @@ describe("BusGeometry", () => {
     expect(busStopGeometry(city, stop({ side: "right" }))).toEqual({ roadPoint: { x: 5, y: 0 }, stopPoint: { x: 5, y: -18 }, tangent: { x: 1, y: 0 } });
   });
 
+  it("finds nearby stops and identifies records that share one station", () => {
+    const existing = stop({ name: "Market", fraction: 0.5, side: "left" }); const shared = stop({ id: "shared", lineId: "other-line", fraction: 0.5, side: "left" }); const otherSide = stop({ id: "other", fraction: 0.5, side: "right" });
+    const otherLine = { ...line([{ roadEdgeId: "ab", forward: true }]), id: "other-line", name: "Other Line" }; const stationCity = { ...city, busLines: [line([{ roadEdgeId: "ab", forward: true }]), otherLine], busStops: [existing, shared, otherSide] } as City;
+    expect(nearestBusStop(stationCity, { x: 5, y: 17 }, 2)).toBe(existing);
+    expect(nearestBusStop(stationCity, { x: 5, y: 10 }, 2)).toBeUndefined();
+    expect(busStopsShareStation(existing, shared)).toBe(true);
+    expect(busStopsShareStation(existing, otherSide)).toBe(false);
+    expect(busStationLines(stationCity, existing).map((candidate) => candidate.id)).toEqual(["line", "other-line"]);
+    expect(busStationLines(stationCity, otherSide).map((candidate) => candidate.id)).toEqual(["line"]);
+  });
+
   it("clamps fractions and safely falls back to the persisted stop position for missing refs", () => {
     expect(pointAtRoadFraction(edges[0]!, nodeMap, 2)!.point).toEqual({ x: 10, y: 0 });
     expect(pointAtRoadFraction(edges[0]!, nodeMap, -1)!.point).toEqual({ x: 0, y: 0 });
@@ -88,6 +99,13 @@ describe("BusGeometry", () => {
       { roadEdgeId: "ab", forward: true, startFraction: 0.5, endFraction: 1 },
       { roadEdgeId: "bc", forward: true, startFraction: 0, endFraction: 0.25 },
     ]);
+  });
+
+  it("does not place routes on or route through pedestrian roads", () => {
+    const routeNodes: RoadNode[] = [{ id: "s", x: -10, y: 0 }, { id: "a", x: 0, y: 0 }, { id: "b", x: 10, y: 0 }, { id: "c", x: 0, y: 10 }, { id: "d", x: 10, y: 10 }, { id: "t", x: 20, y: 0 }];
+    const edge = (id: string, roadId: string, startNodeId: string, endNodeId: string): RoadEdge => ({ id, roadId, name: id, startNodeId, endNodeId, structure: "ground", level: 0, geometry: { type: "line" } });
+    const routeCity = { ...city, roadNodes: routeNodes, roads: [{ id: "normal", name: "Road", category: "normal", subtype: "small", width: 8, segmentIds: ["sa", "ac", "cd", "db", "bt"] }, { id: "walk", name: "Walk", category: "pedestrian", subtype: "pedestrian", width: 4, segmentIds: ["ab"] }], roadEdges: [edge("sa", "normal", "s", "a"), edge("ab", "walk", "a", "b"), edge("ac", "normal", "a", "c"), edge("cd", "normal", "c", "d"), edge("db", "normal", "d", "b"), edge("bt", "normal", "b", "t")] } as City;
+    expect(isBusRoadEdge(routeCity, "ab")).toBe(false); expect(routeBetweenBusStops(routeCity, { roadEdgeId: "sa", fraction: 1 }, { roadEdgeId: "bt", fraction: 0 })?.map((step) => step.roadEdgeId)).toEqual(["ac", "cd", "db"]); expect(routeBetweenBusStops(routeCity, { roadEdgeId: "ab", fraction: 0.2 }, { roadEdgeId: "bt", fraction: 0.5 })).toBeUndefined();
   });
 
   it("returns undefined when stop roads are disconnected or invalid", () => {

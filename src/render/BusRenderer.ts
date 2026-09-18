@@ -1,7 +1,7 @@
 import { Container, Graphics, GraphicsPath, Text } from "pixi.js";
 import busIconSvg from "../../assets/transport/bus.svg?raw";
 import type { EditorSelection } from "../editor/Editor";
-import { busStopGeometry, sampleDirectedBusPathSegments } from "../geometry/BusGeometry";
+import { busStopGeometry, busStopsShareStation, sampleDirectedBusPathSegments } from "../geometry/BusGeometry";
 import type { Point } from "../geometry/Point";
 import type { BusPathStep, BusStop, City } from "../model/City";
 
@@ -66,16 +66,27 @@ export class BusRenderer {
       const path = new Graphics({ label: `bus-line:${line.id}` }); drawPolyline(path, segments); path.stroke({ color, width: 6, alpha: 0.96, cap: "round", join: "round" }); pathLayer.addChild(path);
     }
 
+    const stationGroups: BusStop[][] = [];
     for (const stop of stops) {
-      const geometry = busStopGeometry(city, stop); const line = lineLookup.get(stop.lineId); const color = colorValue(line?.color); const selected = selection?.kind === "bus-stop" && selection.id === stop.id;
+      const group = stationGroups.find((candidate) => candidate[0] && busStopsShareStation(candidate[0], stop));
+      if (group) group.push(stop); else stationGroups.push([stop]);
+    }
+
+    for (const group of stationGroups) {
+      const stop = group[0]!; const geometry = busStopGeometry(city, stop); const colors = [...new Set(group.map((item) => colorValue(lineLookup.get(item.lineId)?.color)))]; const selected = selection?.kind === "bus-stop" && group.some((item) => item.id === selection.id);
       if (geometry.roadPoint.x !== geometry.stopPoint.x || geometry.roadPoint.y !== geometry.stopPoint.y) {
         const connector = new Container({ label: `bus-stop-connector:${stop.id}` });
         const halo = new Graphics().moveTo(geometry.roadPoint.x, geometry.roadPoint.y).lineTo(geometry.stopPoint.x, geometry.stopPoint.y).stroke({ color: 0xffffff, width: 4, alpha: 0.9, cap: "round" });
-        const stem = new Graphics().moveTo(geometry.roadPoint.x, geometry.roadPoint.y).lineTo(geometry.stopPoint.x, geometry.stopPoint.y).stroke({ color, width: 1.5, alpha: 0.95, cap: "round" }); connector.addChild(halo, stem); connectorLayer.addChild(connector);
+        const stem = new Graphics().moveTo(geometry.roadPoint.x, geometry.roadPoint.y).lineTo(geometry.stopPoint.x, geometry.stopPoint.y).stroke({ color: colors[0] ?? FALLBACK_COLOR, width: 1.5, alpha: 0.95, cap: "round" }); connector.addChild(halo, stem); connectorLayer.addChild(connector);
       }
       const marker = new Container({ label: `bus-stop:${stop.id}` }); marker.position.set(geometry.stopPoint.x, geometry.stopPoint.y); keepScreenUpright(marker, camera);
        if (selected) marker.addChild(new Graphics().roundRect(-11, -11, 22, 22, 7).fill({ color: SELECTION_COLOR, alpha: 0.2 }).stroke({ color: SELECTION_COLOR, width: 2.5 }));
-       marker.addChild(new Graphics().roundRect(-10, -10, 20, 20, 6).fill({ color, alpha: 0.96 }));
+       if (colors.length <= 1) marker.addChild(new Graphics().roundRect(-10, -10, 20, 20, 6).fill({ color: colors[0] ?? FALLBACK_COLOR, alpha: 0.96 }));
+       else {
+         const fills = new Graphics({ label: `bus-stop-colors:${group.map((item) => item.id).join(",")}` }); const width = 20 / colors.length;
+         colors.forEach((color, index) => fills.rect(-10 + index * width, -10, width, 20).fill({ color, alpha: 0.96 }));
+         const mask = new Graphics().roundRect(-10, -10, 20, 20, 6).fill(0xffffff); fills.mask = mask; marker.addChild(fills, mask);
+       }
        const iconContainer = new Container({ label: `bus-stop-icon:${stop.id}` });
        if (BUS_ICON_GRAPHICS_PATH) { const icon = new Graphics().path(BUS_ICON_GRAPHICS_PATH).fill({ color: 0xf9fcfb }); icon.pivot.set(512, 512); icon.scale.set(0.011); iconContainer.addChild(icon); }
        marker.addChild(iconContainer);

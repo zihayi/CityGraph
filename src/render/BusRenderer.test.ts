@@ -12,7 +12,7 @@ function city(): City {
     busTerminals: [{ id: "west", name: "West Terminal", position: { x: 0, y: 50 } }, { id: "east", name: "East Terminal", position: { x: 100, y: 50 } }],
     busLines: [{ id: "line", name: "B1", color: "#3366cc", loop: false, startTerminalId: "west", endTerminalId: "east", path: [{ roadEdgeId: "edge", forward: true }], direction: "start-to-end", stopIds: ["stop"] }],
     busStops: [{ id: "stop", name: "Market", lineId: "line", roadEdgeId: "edge", fraction: 0.5, position: { x: 50, y: 75 }, side: "right" }],
-    buildings: [], blocks: [], zones: [], parks: [], waters: [], pois: [], facilities: [], universities: [], transitLines: [], transitStations: [], labels: [],
+    buildings: [], blocks: [], zones: [], parks: [], districts: [], waters: [], pois: [], facilities: [], universities: [], hospitals: [], companies: [], transitLines: [], transitStations: [], labels: [],
   };
 }
 
@@ -44,6 +44,16 @@ describe("BusRenderer", () => {
     const stopSelection = new BusRenderer().render(invalid, { kind: "bus-stop", id: "stop" });
     expect(descendant(stopSelection, "bus-line:line")).toBeUndefined(); expect(descendant(stopSelection, "bus-stop:stop")?.children).toHaveLength(4);
     stopSelection.destroy({ children: true });
+  });
+
+  it("combines colocated stops into one marker with all line colors", () => {
+    const value = city(); value.busLines.push({ ...value.busLines[0]!, id: "line-2", name: "B2", color: "#dd6633", stopIds: ["stop-2"] });
+    value.busStops.push({ ...value.busStops[0]!, id: "stop-2", lineId: "line-2" });
+    const rendered = new BusRenderer().render(value, { kind: "bus-stop", id: "stop-2" });
+    expect(descendant(rendered, "bus-markers")?.children).toHaveLength(1);
+    expect(descendant(rendered, "bus-stop-colors:stop,stop-2")).toBeDefined();
+    expect(descendant(rendered, "bus-stop:stop")?.children).toHaveLength(5);
+    rendered.destroy({ children: true });
   });
 
   it("renders a loop draft with its snapped stop markers", () => {

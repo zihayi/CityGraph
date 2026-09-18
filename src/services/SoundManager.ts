@@ -1,13 +1,7 @@
 import clickUrl from "../../assets/click.wav?url";
-import acousticGuitarUrl from "../../assets/music/viacheslavstarostin-acoustic-guitar-music-467793.mp3?url";
-import jazzCafeUrl from "../../assets/music/aurectheme-jazz-cafe-585969.mp3?url";
-import pianoUrl from "../../assets/music/andriih-piano-piano-background-590657.mp3?url";
-import lofiCoffeeUrl from "../../assets/music/alex-morgan-lofi-jazz-retro-coffee-shop-560042.mp3?url";
-import sunnyCafeUrl from "../../assets/music/alex-morgan-jazz-song-sunny-cafe-nu-jazz-587413.mp3?url";
-import guitarSunriseUrl from "../../assets/music/alex-morgan-acoustic-guitar-sunrise-travel-573651.mp3?url";
-import lofiJazzUrl from "../../assets/music/zephiramusic-lofi-jazz-582886.mp3?url";
 
-const musicTracks = [lofiJazzUrl, acousticGuitarUrl, jazzCafeUrl, pianoUrl, lofiCoffeeUrl, sunnyCafeUrl, guitarSunriseUrl];
+const musicModules = import.meta.glob(["../../assets/music/*.mp3", "!../../assets/music/litesaturation-calm-guitar-no-copyright-557433.mp3"], { eager: true, query: "?url", import: "default" }) as Record<string, string>;
+const musicTracks = Object.entries(musicModules).sort(([left], [right]) => left.localeCompare(right)).map(([, url]) => url);
 
 class SoundManager {
   private readonly clickAudio = new Audio(clickUrl);
