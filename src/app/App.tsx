@@ -22,13 +22,14 @@ import { LaunchScreen } from "../ui/LaunchScreen/LaunchScreen";
 import { StartScreen } from "../ui/LaunchScreen/StartScreen";
 import { CityInformationPanel } from "../ui/CityInformationPanel/CityInformationPanel";
 import { resolveCityInformationLocation, type CityInformationTarget } from "../model/CityInformation";
-import { useEditorStore, type BlockRoadSubtype, type EditorTool, type MeasurementMode } from "./store/editorStore";
+import { useEditorStore, type EditorTool, type MeasurementMode } from "./store/editorStore";
+import { eyedropperSettings, type EyedropperSample } from "./store/eyedropper";
 import { useTranslation } from "./useTranslation";
 import { soundManager } from "../services/SoundManager";
 import { initializeSettingsPersistence } from "../services/SettingsManager";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import type { ValidationKey } from "../map/MapViewport";
+import type { CameraState, ValidationKey } from "../map/MapViewport";
 import { defaultZoneColors, defaultZoneIconColors, defaultZoneIcons } from "../model/ZoneStyle";
 import { defaultEconomySettings, type City } from "../model/City";
 import { CityGraphAIService } from "../services/CityGraphAIService";
@@ -71,6 +72,8 @@ export function App() {
   const eventSnapshot = useRef(initialEventSnapshot);
   const recoveryTimer = useRef<number | undefined>(undefined); const recoveryReady = useRef(false); const recoveryEnabled = useRef(false); const closing = useRef(false);
   const startupSaveHandled = useRef(false);
+  const pendingCamera = useRef<CameraState | undefined>(undefined);
+  useEffect(() => { if (hasActiveCity && pendingCamera.current && mapRef.current) { mapRef.current.setCameraState(pendingCamera.current); pendingCamera.current = undefined; } }, [hasActiveCity, revision]);
   const eyedropperReturnTool = useRef<EditorTool>("select");
   const store = useEditorStore();
   const queueRecovery = (immediate = false) => {
@@ -121,10 +124,10 @@ export function App() {
   };
   const load = async (folderName?: string) => {
      setOpeningCity(true);
-     try { const loaded = await saveManager.load(folderName); editor.replaceCity(loaded.city); activeCity.current = true; setHasActiveCity(true); eventSnapshot.current = createCitySnapshot(loaded.city); setInformationSelected(undefined); cleanStateId.current = editor.commands.stateId; auxiliaryDirty.current = false; auxiliaryRevision.current = 0; setDocumentDirty(false); await clearRecovery(); recoveryEnabled.current = true; setRecovery(null); setDialog(null); requestAnimationFrame(() => mapRef.current?.setCameraState(loaded.camera)); showStatus(t("save.loaded", { name: loaded.saveName })); } catch (error) { showStatus(errorMessage(error)); } finally { setOpeningCity(false); }
+     try { const loaded = await saveManager.load(folderName); pendingCamera.current = loaded.camera; editor.replaceCity(loaded.city); activeCity.current = true; setHasActiveCity(true); eventSnapshot.current = createCitySnapshot(loaded.city); setInformationSelected(undefined); cleanStateId.current = editor.commands.stateId; auxiliaryDirty.current = false; auxiliaryRevision.current = 0; setDocumentDirty(false); await clearRecovery(); recoveryEnabled.current = true; setRecovery(null); setDialog(null); showStatus(t("save.loaded", { name: loaded.saveName })); } catch (error) { showStatus(errorMessage(error)); } finally { setOpeningCity(false); }
   };
   useEffect(() => {
-    if (!launchComplete || !settingsReady || recovery !== null || startupSaveHandled.current) return;
+    if (!settingsReady || recovery !== null || startupSaveHandled.current) return;
     startupSaveHandled.current = true;
     void (async () => { await refreshSaves(); const name = isTauri() ? await invoke<string | null>("startup_save_name") : null; if (name && !activeCity.current) await load(name); })().catch(() => undefined).finally(() => setStartupReady(true));
   }, [launchComplete, recovery, settingsReady]);
@@ -137,7 +140,7 @@ export function App() {
   const toggleEyedropper = () => { if (eyedropperActive) { setEyedropperActive(false); store.setCurrentTool(eyedropperReturnTool.current); return; } eyedropperReturnTool.current = store.currentTool === "eyedropper" ? "select" : store.currentTool; setEyedropperActive(true); store.setCurrentTool("eyedropper"); };
   const toggleMarquee = () => { setEyedropperActive(false); store.setCurrentTool(store.currentTool === "marquee" ? "select" : "marquee"); };
   const selectMeasurement = (mode: MeasurementMode) => { setEyedropperActive(false); store.setMeasurementMode(mode); store.setCurrentTool("measure"); };
-  const finishEyedropper = (subtype?: BlockRoadSubtype) => { if (subtype) { store.setRoadSubtype(subtype); store.setBlockRoadSubtype(subtype); } setEyedropperActive(false); store.setCurrentTool(eyedropperReturnTool.current); };
+  const finishEyedropper = (sample?: EyedropperSample) => { setEyedropperActive(false); setValidation(undefined); if (sample) { useEditorStore.setState(eyedropperSettings(sample, eyedropperReturnTool.current)); showStatus(t("eyedropper.applied")); } else store.setCurrentTool(eyedropperReturnTool.current); };
   const beginCity = (city: City) => { editor.replaceCity(city); activeCity.current = true; setHasActiveCity(true); eventSnapshot.current = createCitySnapshot(city); setInformationSelected(undefined); saveManager.reset(); cleanStateId.current = -1; auxiliaryDirty.current = false; auxiliaryRevision.current = 0; setDocumentDirty(true); setTool("select"); setDialog(null); queueRecovery(true); showStatus(t("status.ready")); };
   const create = (options: NewMapOptions) => beginCity(createNewCity(options));
   const openSettings = () => { setDialog("settings"); void refreshSaves(); };
@@ -190,7 +193,7 @@ export function App() {
   const locateNews = (article: NewsArticle) => { const resolved = resolveNewsMapLocation(editor.state.city, article); if (!resolved) { showStatus(t("daily.locationUnavailable")); return; } setTool("select"); if (resolved.layer && !store.layers[resolved.layer]) store.toggleLayer(resolved.layer); editor.select(resolved.selection); if (resolved.points.length) mapRef.current?.focusPoints(resolved.points); };
   const saveAndExit = async () => { setExitSaving(true); if (await save()) { closing.current = true; await getCurrentWindow().destroy(); } else setExitSaving(false); };
   const discardAndExit = async () => { setExitSaving(true); await clearRecovery().catch(() => undefined); closing.current = true; await getCurrentWindow().destroy(); };
-  const restoreRecovery = async () => { if (!recovery) return; setRecoveryResolving(true); editor.replaceCity(recovery.city); activeCity.current = true; setHasActiveCity(true); startupSaveHandled.current = true; eventSnapshot.current = createCitySnapshot(recovery.city); saveManager.reset(); cleanStateId.current = -1; auxiliaryDirty.current = false; auxiliaryRevision.current = 0; setInformationSelected(undefined); setDocumentDirty(true); recoveryEnabled.current = true; setRecovery(null); requestAnimationFrame(() => mapRef.current?.setCameraState(recovery.camera)); queueRecovery(true); setRecoveryResolving(false); showStatus(t("recovery.restored")); };
+   const restoreRecovery = async () => { if (!recovery) return; setRecoveryResolving(true); pendingCamera.current = recovery.camera; editor.replaceCity(recovery.city); activeCity.current = true; setHasActiveCity(true); startupSaveHandled.current = true; eventSnapshot.current = createCitySnapshot(recovery.city); saveManager.reset(); cleanStateId.current = -1; auxiliaryDirty.current = false; auxiliaryRevision.current = 0; setInformationSelected(undefined); setDocumentDirty(true); recoveryEnabled.current = true; setRecovery(null); queueRecovery(); setRecoveryResolving(false); showStatus(t("recovery.restored")); };
   const discardRecovery = async () => { setRecoveryResolving(true); await clearRecovery().catch(() => undefined); recoveryEnabled.current = true; setRecovery(null); setRecoveryResolving(false); };
   const road = { mode: store.roadMode, shape: store.roadShape, subtype: store.roadSubtype, width: store.roadWidth, structure: store.roadStructure, allowWaterCrossing: store.roadAllowWaterCrossing, align: store.roadAlign, angleEnabled: store.roadAngleEnabled, angle: store.roadAngle, gridSnap: store.roadGridSnap, gridSize: store.roadGridSize, polygonSides: store.roadPolygonSides, parallelOffset: store.roadParallelOffset } as const;
   const zone = store.currentTool === "university" ? { mode: store.universityMode === "edit" ? "edit" as const : store.zoneMode === "road-fill" ? "road-fill" as const : "custom" as const, type: "education" as const, color: store.zoneColors.education ?? defaultZoneColors.education, icon: defaultZoneIcons.education, iconColor: defaultZoneIconColors.education, iconOpacity: 1, layerOpacity: store.zoningOpacity } : { mode: store.zoneMode, type: store.zoneType, color: store.zoneColor, icon: store.zoneIcon, iconColor: store.zoneIconColor, iconOpacity: store.zoneIconOpacity, layerOpacity: store.zoningOpacity };
@@ -211,9 +214,11 @@ export function App() {
   };
 
   return <div className="app-shell" data-revision={revision} data-toolbar-collapsed={store.toolbarCollapsed} onPointerDownCapture={(event) => { if (event.button === 0) playControlClick(event.target); }} onClickCapture={(event) => { if (event.detail === 0) playControlClick(event.target); }}>
+    {hasActiveCity && <>
      <TopBar cityName={city.name} canUndo={editor.commands.canUndo} canRedo={editor.commands.canRedo} marqueeActive={store.currentTool === "marquee"} onMarquee={toggleMarquee} eyedropperActive={eyedropperActive} onEyedropper={toggleEyedropper} measurementActive={store.currentTool === "measure"} measurementMode={store.measurementMode} onMeasurement={selectMeasurement} t={t} onUndo={() => editor.undo()} onRedo={() => editor.redo()} onSave={() => void save()} onSettings={openSettings} onCityNameChange={(name) => editor.renameCity(name)}/>
       <div className="workspace"><LeftToolbar currentTool={store.currentTool} collapsed={store.toolbarCollapsed} canvasEditable={city.mapSize !== "unlimited"} informationOpen={informationOpen} onInformation={() => { if (!informationOpen) { editor.select(null); setInformationOpen(true); } }} onToolChange={setTool} onToggleCollapsed={store.toggleToolbarCollapsed} t={t}/><MapWorkspace editor={editor} layers={visibleLayers} tool={store.currentTool} road={road} zone={zone} landscaping={landscaping} district={district} building={building} water={water} block={block} university={university} bus={bus} measurement={measurement} shortcuts={store.shortcuts} inputEnabled={hasActiveCity && dialog === null && !exitPrompt && recovery === null} mapRef={mapRef} onZoomChange={store.setZoomPercent} validation={validation} onValidation={setValidation} onEyedropper={finishEyedropper} t={t}/>{informationOpen && <CityInformationPanel city={city} locale={store.locale} selected={informationSelected} onSelect={selectInformationTarget} onReorderUniversityRankings={(ids) => editor.updateUniversityRankings(ids)} onUpdateCompanyMarketValue={(id, marketValue) => editor.updateCompany(id, { marketValue })} dailyGenerating={dailyGenerating} onGenerateDaily={() => void generateDaily()} onLocateNews={locateNews} aiConfigured={Boolean(store.deepSeekApiKey)} onAskAssistant={askCityAssistant} onConfigureAI={() => setDialog("settings-ai")} onClose={() => setInformationOpen(false)} t={t}/>}<RightPanel editor={editor} tool={store.currentTool} visibility={store.layers} zoningOpacity={store.zoningOpacity} onZoningOpacity={store.setZoningOpacity} onToggleLayer={store.toggleLayer} onExtendBusRoute={extendBusRoute} t={t}/></div>
-      {launchComplete && !hasActiveCity && dialog === null && !recovery && <StartScreen saves={saves} loading={!startupReady || savesLoading || openingCity} message={status} locale={store.locale} musicEnabled={store.musicEnabled} musicVolume={store.musicVolume} autoSaveEnabled={store.autoSaveEnabled} onLocale={store.setLocale} onMusicEnabled={store.setMusicEnabled} onMusicVolume={store.setMusicVolume} onAutoSaveEnabled={store.setAutoSaveEnabled} onNew={() => setDialog("new")} onImport={() => setDialog("import")} onDemo={() => beginCity(createDemoCity())} onLoad={(folder) => void load(folder)} onRefresh={() => void refreshSaves()} t={t}/>}
+    </>}
+      {!hasActiveCity && dialog === null && !recovery && <StartScreen saves={saves} loading={!startupReady || savesLoading || openingCity} message={status} locale={store.locale} musicEnabled={store.musicEnabled} musicVolume={store.musicVolume} autoSaveEnabled={store.autoSaveEnabled} onLocale={store.setLocale} onMusicEnabled={store.setMusicEnabled} onMusicVolume={store.setMusicVolume} onAutoSaveEnabled={store.setAutoSaveEnabled} onNew={() => setDialog("new")} onImport={() => setDialog("import")} onDemo={() => beginCity(createDemoCity())} onLoad={(folder) => void load(folder)} onRefresh={() => void refreshSaves()} t={t}/>}
       {dialog === "new" && <NewMapDialog t={t} onCreate={create} onCancel={() => setDialog(null)}/>}
       {dialog === "import" && <ImportMapDialog locale={store.locale} hasUnsavedChanges={isDirty} allowMerge={hasActiveCity} currentCenter={mapRef.current?.getViewCenter() ?? { x: city.bounds.x + city.bounds.width / 2, y: city.bounds.y + city.bounds.height / 2 }} pickingPosition={Boolean(importPlacement)} onPickPosition={(city, center, onChoose) => setImportPlacement({ city, center, onChoose })} onImport={importCity} onCancel={() => setDialog(hasActiveCity ? "settings" : null)} t={t}/>}
       {importPlacement && <ImportPlacementOverlay request={importPlacement} mapRef={mapRef} onConfirm={(point) => { importPlacement.onChoose(point); setImportPlacement(undefined); }} onCancel={() => setImportPlacement(undefined)} t={t}/>}

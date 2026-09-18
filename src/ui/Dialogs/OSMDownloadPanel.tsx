@@ -21,6 +21,7 @@ export function OSMDownloadPanel({ locale, layers, onLayers, onReady, onBusy, t 
   const [selecting, setSelecting] = useState(false); const [tileError, setTileError] = useState(false);
   const [places, setPlaces] = useState<OSMSearchResult[]>([]); const [searched, setSearched] = useState(false); const [searching, setSearching] = useState(false);
   const [phase, setPhase] = useState<"download" | "parse">(); const [progress, setProgress] = useState<OSMDownloadProgress>(); const [error, setError] = useState<TranslationKey>();
+  const [errorSource, setErrorSource] = useState<"search" | "download">("download");
   const searchId = useRef(0); const downloadId = useRef(0); const abort = useRef<AbortController | undefined>(undefined); const worker = useRef<Worker | undefined>(undefined);
   const busy = phase !== undefined; const desktop = isTauri(); const invalid = osmBoundsError(bounds); const size = osmBoundsSize(bounds);
   const hasLayers = osmLayers.some((layer) => layers[layer]);
@@ -30,7 +31,7 @@ export function OSMDownloadPanel({ locale, layers, onLayers, onReady, onBusy, t 
     if (!query.trim() || searching || busy) return;
     const coordinates = parseOSMCoordinates(query); setError(undefined); setPlaces([]); setSearched(false);
     if (coordinates) { goTo(coordinates); return; }
-    const id = ++searchId.current; setSearching(true);
+    const id = ++searchId.current; setSearching(true); setErrorSource("search");
     try { const results = await searchOSMPlaces(query, center); if (id === searchId.current) { setPlaces(results); setSearched(true); } }
     catch (failure) { if (id === searchId.current) setError(`osm.error.${osmNetworkErrorCode(failure)}`); }
     finally { if (id === searchId.current) setSearching(false); }
@@ -39,7 +40,7 @@ export function OSMDownloadPanel({ locale, layers, onLayers, onReady, onBusy, t 
   const download = async () => {
     if (busy || invalid || !desktop || !hasLayers) return;
     const id = ++downloadId.current; const controller = new AbortController(); abort.current = controller;
-    const mapName = name.trim() || t("osm.defaultName"); setPhase("download"); setError(undefined); setProgress(undefined); onBusy(true);
+    const mapName = name.trim() || t("osm.defaultName"); setPhase("download"); setErrorSource("download"); setError(undefined); setProgress(undefined); onBusy(true);
     try {
       const extracted = await downloadOSMRegion(bounds, (value) => { if (id === downloadId.current) setProgress(value); }, controller.signal);
       if (id !== downloadId.current) return;
@@ -69,8 +70,8 @@ export function OSMDownloadPanel({ locale, layers, onLayers, onReady, onBusy, t 
     <p className="osm-download-size">{t("osm.area")}: {Number.isFinite(size.width) ? (size.width / 1000).toLocaleString(locale, { maximumFractionDigits: 2 }) : "—"} × {Number.isFinite(size.height) ? (size.height / 1000).toLocaleString(locale, { maximumFractionDigits: 2 }) : "—"} km · {Number.isFinite(size.area) ? (size.area / 1_000_000).toLocaleString(locale, { maximumFractionDigits: 2 }) : "—"} km²</p>
     {invalid && <p className="osm-import-error" role="alert">{t(`osm.error.${invalid}`)}</p>}
     {!desktop && <p className="osm-import-help">{t("osm.error.unsupported")}</p>}
-    {error && <p className="osm-import-error" role="alert">{t(error)}</p>}
-    {busy && <div className="osm-download-progress" role="status"><strong>{t(phase === "parse" ? "osm.parsing" : progress?.stage === "splitting" ? "osm.splitting" : "osm.downloading")}</strong>{progress && <span>{progress.completedTiles} / {progress.totalTiles} {t("osm.tiles")} · {(progress.bytes / 1024 / 1024).toFixed(2)} MB</span>}<progress max={progress?.totalTiles || 1} value={phase === "parse" ? progress?.totalTiles ?? 1 : progress?.completedTiles ?? 0}/></div>}
+    {error && <p className="osm-import-error" role="alert">{t(errorSource === "search" ? "osm.searchFailed" : "osm.downloadFailed")} {t(error)}</p>}
+    {busy && <div className="osm-download-progress" role="status"><strong>{t(phase === "parse" ? "osm.parsing" : progress?.stage === "retrying" ? "osm.retrying" : progress?.stage === "splitting" ? "osm.splitting" : "osm.downloading")}</strong>{progress && <span>{progress.completedTiles} / {progress.totalTiles} {t("osm.tiles")} · {(progress.bytes / 1024 / 1024).toFixed(2)} MB</span>}<progress max={progress?.totalTiles || 1} value={phase === "parse" ? progress?.totalTiles ?? 1 : progress?.completedTiles ?? 0}/></div>}
     {!hasLayers && <p className="osm-import-help">{t("osm.chooseContent")}</p>}
     <div className="osm-download-actions">{busy ? <button type="button" onClick={cancel}><X size={16}/>{t("osm.cancel")}</button> : <button type="button" className="primary" disabled={Boolean(invalid) || !desktop || searching || !hasLayers} onClick={() => void download()}><Download size={17}/>{t("osm.download")}</button>}</div>
     <MapSourceDetails search t={t}/>

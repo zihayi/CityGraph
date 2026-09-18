@@ -25,6 +25,7 @@ interface MetadataDocument {
   gameVersion: string;
   saveName: string;
   mapName: string;
+  cityId?: string;
   createdAt: string;
   updatedAt: string;
   autosave?: boolean;
@@ -63,7 +64,16 @@ interface FacilitiesDocument { companies: Company[]; facilities: FacilityPOI[] }
 interface AIDocument { cityId: string; config: AIConfig; events: CityEvent[]; articles: NewsArticle[]; issues: DailyNewsIssue[]; relations: EntityRelation[]; snapshot?: CityAISnapshot }
 interface SaveDocuments { metadata: MetadataDocument; map: MapDocument; roads: RoadsDocument; zones: ZonesDocument; buildings: BuildingsDocument; facilities: FacilitiesDocument; ai: AIDocument }
 type SerializedSaveDocuments = { [Key in keyof SaveDocuments]: string };
-export interface ManagedSaveSlot { folderName: string; saveName: string; mapName: string; createdAt: string; updatedAt: string; autosave: boolean; thumbnail?: string }
+export interface ManagedSaveSlot { folderName: string; saveName: string; mapName: string; cityId?: string; createdAt: string; updatedAt: string; autosave: boolean; thumbnail?: string }
+export function saveCityId(slot: Pick<ManagedSaveSlot, "cityId" | "mapName">): string { return slot.cityId || `legacy:${slot.mapName}`; }
+export function groupCitySaves(slots: readonly ManagedSaveSlot[]): Array<{ id: string; name: string; slots: ManagedSaveSlot[] }> {
+  const groups = new Map<string, { id: string; name: string; slots: ManagedSaveSlot[] }>();
+  for (const slot of [...slots].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))) {
+    const id = saveCityId(slot); const group = groups.get(id) ?? { id, name: slot.mapName, slots: [] };
+    group.slots.push(slot); groups.set(id, group);
+  }
+  return [...groups.values()];
+}
 export interface AutoSaveOptions { maxSlots: number }
 export interface LoadedSave { city: City; camera: CameraState; saveName: string; updatedAt: string }
 export type SaveErrorCode = "unsupported" | "cancelled" | "invalid" | "version" | "failed";
@@ -175,18 +185,20 @@ export class SaveManager {
   public reset(): void { this.saveDirectory = undefined; this.createdAt = undefined; this.currentSaveName = undefined; this.desktopParentPath = undefined; this.desktopFolderName = undefined; }
 
   public async saveAs(saveName: string, city: City, camera: CameraState, thumbnail?: string): Promise<void> {
+    const slots = await this.listSaves(); const base = safeFolderName(saveName); let folderName = base; let suffix = 2;
+    while (slots.some((slot) => slot.folderName.toLowerCase() === folderName.toLowerCase() && (slot.autosave || saveCityId(slot) !== city.id))) folderName = `${base}-${suffix++}`;
     if (isTauri()) {
       try {
         const parent = await this.desktopSavesPath();
         this.createdAt = new Date().toISOString(); this.currentSaveName = saveName;
-        this.desktopParentPath = parent; this.desktopFolderName = safeFolderName(saveName);
+        this.desktopParentPath = parent; this.desktopFolderName = folderName;
         await this.writeDesktop(city, camera, saveName, thumbnail);
         return;
       } catch (error) { this.translateError(error); }
     }
     try {
       const parent = await this.browserSavesDirectory();
-      this.saveDirectory = await parent.getDirectoryHandle(safeFolderName(saveName), { create: true });
+      this.saveDirectory = await parent.getDirectoryHandle(folderName, { create: true });
       this.createdAt = new Date().toISOString(); this.currentSaveName = saveName;
       await this.write(city, camera, saveName, thumbnail);
     } catch (error) { this.translateError(error); }
@@ -203,9 +215,9 @@ export class SaveManager {
   public async autoSave(city: City, camera: CameraState, options: AutoSaveOptions, thumbnail?: string): Promise<void> {
     if (this.autoSavePending) return; this.autoSavePending = true;
     try {
-      const now = new Date().toISOString(); const folderName = `autosave-${Date.now()}`; const documents = this.createDocuments(city, camera, city.name, now, true, thumbnail);
-      if (isTauri()) { const parentPath = await this.desktopSavesPath(); await this.invokeDesktopWrite(parentPath, folderName, documents); await invoke("prune_auto_saves", { parentPath, maxSlots: Math.max(1, Math.round(options.maxSlots)) }); }
-      else { const parent = await this.browserSavesDirectory(); const directory = await parent.getDirectoryHandle(folderName, { create: true }); await this.writeDocuments(directory, documents); await this.pruneBrowserAutoSaves(parent, options); }
+      const now = new Date().toISOString(); const folderName = `autosave-${safeFolderName(city.name)}-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`; const documents = this.createDocuments(city, camera, city.name, now, true, thumbnail);
+      if (isTauri()) { const parentPath = await this.desktopSavesPath(); await this.invokeDesktopWrite(parentPath, folderName, documents); await invoke("prune_auto_saves", { parentPath, cityId: city.id, maxSlots: Math.max(1, Math.round(options.maxSlots)) }); }
+      else { const parent = await this.browserSavesDirectory(); const directory = await parent.getDirectoryHandle(folderName, { create: true }); await this.writeDocuments(directory, documents); await this.pruneBrowserAutoSaves(parent, options, city.id); }
     } finally { this.autoSavePending = false; }
   }
 
@@ -301,7 +313,7 @@ export class SaveManager {
   private createDocuments(city: City, camera: CameraState, saveName: string, createdAt = this.createdAt, autosave = false, thumbnail?: string): SaveDocuments {
     const now = new Date().toISOString(); const zones = normalizeHospitalCampuses(city.hospitals, city.zones); const companies = deriveCompanyMarketValueRanks(city.companies); const facilities = normalizeCompanyLocations(companies, city.facilities);
     return {
-      metadata: { formatVersion: FORMAT_VERSION, gameVersion: GAME_VERSION, saveName, mapName: city.name, createdAt: createdAt ?? now, updatedAt: now, autosave, thumbnail },
+      metadata: { formatVersion: FORMAT_VERSION, gameVersion: GAME_VERSION, saveName, mapName: city.name, cityId: city.id, createdAt: createdAt ?? now, updatedAt: now, autosave, thumbnail },
       map: { mapSize: city.mapSize, mapSource: city.mapSource, osmAttribution: city.osmAttribution, worldBounds: city.bounds, terrain: city.terrain, economy: { ...(city.economy ?? defaultEconomySettings) }, water: city.waters, camera, blocks: city.blocks, parks: city.parks, districts: city.districts, pois: city.pois, transitLines: city.transitLines, transitStations: city.transitStations, railNodes: city.railNodes ?? [], railTracks: city.railTracks ?? [], railStations: city.railStations ?? [], railLines: city.railLines ?? [], metroLogo: city.metroLogo ?? "", busTerminals: city.busTerminals, busLines: city.busLines, busStops: city.busStops, labels: city.labels },
       roads: { roadNodes: city.roadNodes, roads: city.roads, roadEdges: city.roadEdges },
       zones: { universities: city.universities, hospitals: city.hospitals, zones },
@@ -322,8 +334,21 @@ export class SaveManager {
   private async browserSavesDirectory(): Promise<FileSystemDirectoryHandle> { return (await this.browserAppDirectory()).getDirectoryHandle("saves", { create: true }); }
   private async browserRecoveryDirectory(): Promise<FileSystemDirectoryHandle> { return (await this.browserAppDirectory()).getDirectoryHandle("recovery", { create: true }); }
   private preferredSlot(slots: ManagedSaveSlot[]): ManagedSaveSlot | undefined { return [...slots].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))[0]; }
-  private async listBrowserSaves(parent: FileSystemDirectoryHandle): Promise<ManagedSaveSlot[]> { const result: ManagedSaveSlot[] = []; const iterable = parent as unknown as { entries: () => AsyncIterableIterator<[string, FileSystemHandle]> }; for await (const [folderName, handle] of iterable.entries()) { if (handle.kind !== "directory") continue; try { const metadata = await this.readJson(handle as FileSystemDirectoryHandle, "metadata.json"); if (isRecord(metadata) && typeof metadata.updatedAt === "string") result.push({ folderName, saveName: typeof metadata.saveName === "string" ? metadata.saveName : folderName, mapName: typeof metadata.mapName === "string" ? metadata.mapName : folderName, createdAt: typeof metadata.createdAt === "string" ? metadata.createdAt : metadata.updatedAt, updatedAt: metadata.updatedAt, autosave: metadata.autosave === true, thumbnail: typeof metadata.thumbnail === "string" && /^data:image\/(?:png|jpeg|webp);base64,/i.test(metadata.thumbnail) ? metadata.thumbnail : undefined }); } catch { /* Ignore incomplete saves. */ } } return result.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)); }
-  private async pruneBrowserAutoSaves(parent: FileSystemDirectoryHandle, options: AutoSaveOptions): Promise<void> { const saves = (await this.listBrowserSaves(parent)).filter((slot) => slot.autosave).sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt)); for (const [index, slot] of saves.entries()) if (index >= Math.max(1, Math.round(options.maxSlots))) await parent.removeEntry(slot.folderName, { recursive: true }); }
+  private async listBrowserSaves(parent: FileSystemDirectoryHandle): Promise<ManagedSaveSlot[]> {
+    const result: ManagedSaveSlot[] = []; const iterable = parent as unknown as { entries: () => AsyncIterableIterator<[string, FileSystemHandle]> };
+    for await (const [folderName, handle] of iterable.entries()) {
+      if (handle.kind !== "directory") continue;
+      try {
+        const directory = handle as FileSystemDirectoryHandle; const metadata = await this.readJson(directory, "metadata.json");
+        if (!isRecord(metadata) || typeof metadata.updatedAt !== "string") continue;
+        const ai = metadata.cityId ? undefined : await this.readOptionalJson(directory, "ai.json", undefined);
+        const cityId = typeof metadata.cityId === "string" && metadata.cityId || (isRecord(ai) && typeof ai.cityId === "string" ? ai.cityId : undefined);
+        result.push({ folderName, cityId: cityId || undefined, saveName: typeof metadata.saveName === "string" ? metadata.saveName : folderName, mapName: typeof metadata.mapName === "string" ? metadata.mapName : folderName, createdAt: typeof metadata.createdAt === "string" ? metadata.createdAt : metadata.updatedAt, updatedAt: metadata.updatedAt, autosave: metadata.autosave === true, thumbnail: typeof metadata.thumbnail === "string" && /^data:image\/(?:png|jpeg|webp);base64,/i.test(metadata.thumbnail) ? metadata.thumbnail : undefined });
+      } catch { /* Ignore incomplete saves. */ }
+    }
+    return result.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  }
+  private async pruneBrowserAutoSaves(parent: FileSystemDirectoryHandle, options: AutoSaveOptions, cityId?: string): Promise<void> { const saves = (await this.listBrowserSaves(parent)).filter((slot) => slot.autosave && (cityId === undefined || saveCityId(slot) === cityId)); for (const [index, slot] of saves.entries()) if (index >= Math.max(1, Math.round(options.maxSlots))) await parent.removeEntry(slot.folderName, { recursive: true }); }
 
   private async writeJson(directory: FileSystemDirectoryHandle, name: string, value: unknown): Promise<void> {
     await this.writeText(directory, name, JSON.stringify(value, null, 2));
@@ -402,7 +427,7 @@ export class SaveManager {
     const city: City = {
       mapSource: mapSource as City["mapSource"],
       osmAttribution: mapValue.osmAttribution as boolean | undefined,
-      id: ai?.cityId || crypto.randomUUID(), name: String(metadataValue.mapName || "Loaded City"), bounds: bounds as unknown as City["bounds"], mapSize: mapValue.mapSize as MapSize, terrain: mapValue.terrain as TerrainType, economy,
+      id: typeof metadataValue.cityId === "string" && metadataValue.cityId || ai?.cityId || `legacy:${String(metadataValue.mapName || metadataValue.saveName || "Loaded City")}`, name: String(metadataValue.mapName || "Loaded City"), bounds: bounds as unknown as City["bounds"], mapSize: mapValue.mapSize as MapSize, terrain: mapValue.terrain as TerrainType, economy,
       waters: mapValue.water as WaterArea[], roadNodes, roads, roadEdges,
       buildings,
       blocks: Array.isArray(mapValue.blocks) ? mapValue.blocks as City["blocks"] : [],

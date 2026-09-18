@@ -89,7 +89,38 @@ fn client(timeout: u64) -> Result<Client, String> {
 }
 
 fn network_error(error: reqwest::Error) -> String {
-    if error.is_timeout() { "timeout".into() } else { "network".into() }
+    if error.is_timeout() { "timeout".into() } else if error.is_connect() { "connection".into() } else if error.is_body() || error.is_decode() { "interrupted".into() } else { "network".into() }
+}
+
+// Retry a complete tile, never append a partially received response to the map.
+// Dropping this future (the download cancellation select) also cancels backoff.
+async fn request_body(client: &Client, endpoint: &str, query: &[(&str, String)], limit: usize, mut progress: impl FnMut(usize, bool)) -> Result<(StatusCode, Vec<u8>), String> {
+    for attempt in 0..3 {
+        let mut retry_after = None;
+        let result = match client.get(endpoint).query(query).send().await {
+            Err(error) => Err(network_error(error)),
+            Ok(response) => {
+                let status = response.status();
+                retry_after = response.headers().get(reqwest::header::RETRY_AFTER).and_then(|value| value.to_str().ok()).and_then(|value| value.parse::<u64>().ok());
+                if status.is_success() || status == StatusCode::BAD_REQUEST {
+                    bounded_body(response, if status.is_success() { limit } else { 64 * 1024 }, |bytes| progress(bytes, false)).await.map(|body| (status, body))
+                } else if status == StatusCode::TOO_MANY_REQUESTS { Err("rateLimited".into()) }
+                else if status == StatusCode::REQUEST_TIMEOUT { Err("timeout".into()) }
+                else if status.is_server_error() { Err("serverUnavailable".into()) }
+                else { Err("rejected".into()) }
+            }
+        };
+        match result {
+            Ok(body) => return Ok(body),
+            Err(error) => {
+                let retryable = matches!(error.as_str(), "network" | "connection" | "interrupted" | "timeout" | "serverUnavailable" | "rateLimited");
+                if !retryable || attempt == 2 || retry_after.is_some_and(|seconds| seconds > 10) { return Err(error); }
+                progress(0, true);
+                tokio::time::sleep(Duration::from_secs(retry_after.unwrap_or(1 << attempt).max(1))).await;
+            }
+        }
+    }
+    unreachable!()
 }
 
 async fn bounded_body(mut response: reqwest::Response, limit: usize, mut progress: impl FnMut(usize)) -> Result<Vec<u8>, String> {
@@ -138,10 +169,8 @@ pub async fn osm_search_places(query: String, latitude: f64, longitude: f64, sta
     if let Some((time, results)) = search.cache.get(&key) { if time.elapsed() < Duration::from_secs(3600) { return Ok(results.clone()); } }
     if let Some(last) = search.last_request { if let Some(wait) = Duration::from_secs(1).checked_sub(last.elapsed()) { tokio::time::sleep(wait).await; } }
     search.last_request = Some(Instant::now());
-    let response = client(20)?.get(SEARCH_URL).query(&[("q", query.to_string()), ("lat", latitude.to_string()), ("lon", longitude.to_string()), ("limit", "6".into())]).send().await.map_err(network_error)?;
-    if response.status() == StatusCode::TOO_MANY_REQUESTS { return Err("rateLimited".into()); }
-    if !response.status().is_success() { return Err("network".into()); }
-    let body = bounded_body(response, 1024 * 1024, |_| {}).await?;
+    let (status, body) = request_body(&client(20)?, SEARCH_URL, &[("q", query.to_string()), ("lat", latitude.to_string()), ("lon", longitude.to_string()), ("limit", "6".into())], 1024 * 1024, |_, _| {}).await?;
+    if !status.is_success() { return Err("rejected".into()); }
     let results = parse_search(&body)?;
     if search.cache.len() >= 32 { search.cache.clear(); }
     search.cache.insert(key, (Instant::now(), results.clone())); Ok(results)
@@ -158,11 +187,10 @@ async fn download_from(bounds: OsmBounds, on_progress: Channel<DownloadProgress>
         let total_tiles = parts.len() + pending.len() + 1;
         let _ = on_progress.send(DownloadProgress { completed_tiles: parts.len(), total_tiles, bytes, stage: "downloading" });
         let bbox = format!("{},{},{},{}", tile.west, tile.south, tile.east, tile.north);
-        let response = client.get(endpoint).query(&[("bbox", bbox)]).send().await.map_err(network_error)?;
-        let status = response.status();
-        if status == StatusCode::TOO_MANY_REQUESTS { return Err("rateLimited".into()); }
+        let (status, body) = request_body(&client, endpoint, &[("bbox", bbox)], MAX_BYTES - bytes, |downloaded, retrying| {
+            let _ = on_progress.send(DownloadProgress { completed_tiles: parts.len(), total_tiles, bytes: bytes + downloaded, stage: if retrying { "retrying" } else { "downloading" } });
+        }).await?;
         if status == StatusCode::BAD_REQUEST {
-            let body = bounded_body(response, 64 * 1024, |_| {}).await?;
             if node_limit_response(status, &String::from_utf8_lossy(&body)) {
                 let children = tile.split();
                 if children.iter().any(|part| part.validate_download().is_err()) { return Err("tooLarge".into()); }
@@ -172,13 +200,9 @@ async fn download_from(bounds: OsmBounds, on_progress: Channel<DownloadProgress>
             }
             return Err("invalidBounds".into());
         }
-        if !status.is_success() { return Err("network".into()); }
-        let body = bounded_body(response, MAX_BYTES - bytes, |downloaded| {
-            let _ = on_progress.send(DownloadProgress { completed_tiles: parts.len(), total_tiles, bytes: bytes + downloaded, stage: "downloading" });
-        }).await?;
         bytes += body.len();
         let xml = String::from_utf8(body).map_err(|_| "invalidResponse")?;
-        if !xml.contains("<osm ") || xml.contains("<error>") || xml.contains("<remark>") { return Err("invalidResponse".into()); }
+        if !xml.contains("<osm ") || !xml.trim_end().ends_with("</osm>") || xml.contains("<error>") || xml.contains("<remark>") { return Err("invalidResponse".into()); }
         parts.push(xml);
     }
     let _ = on_progress.send(DownloadProgress { completed_tiles: parts.len(), total_tiles: parts.len(), bytes, stage: "complete" });
@@ -209,6 +233,44 @@ pub fn osm_cancel_download(request_id: String, state: State<'_, OsmNetworkState>
 #[cfg(test)]
 mod tests {
     use super::*;
+    async fn serve_responses(responses: Vec<String>) -> (String, tokio::task::JoinHandle<()>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let endpoint = format!("http://{}/map", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move {
+            for response in responses {
+                let (mut stream, _) = listener.accept().await.unwrap(); let mut buffer = [0; 4096];
+                stream.read(&mut buffer).await.unwrap(); stream.write_all(response.as_bytes()).await.unwrap();
+            }
+        });
+        (endpoint, task)
+    }
+    #[tokio::test]
+    async fn retries_server_errors_and_truncated_transfers_without_duplicating_data() {
+        let xml = "<osm version=\"0.6\"><node id=\"1\" lat=\"30\" lon=\"120\"/></osm>";
+        let (endpoint, server) = serve_responses(vec![
+            "HTTP/1.1 503 Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".into(),
+            "HTTP/1.1 200 OK\r\nContent-Length: 1000\r\nConnection: close\r\n\r\n<osm ".into(),
+            format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{xml}", xml.len()),
+        ]).await;
+        let result = download_from(OsmBounds { south: 30.0, west: 120.0, north: 30.01, east: 120.01 }, Channel::new(|_| Ok(())), &endpoint).await.unwrap();
+        assert_eq!(result.parts, vec![xml]); assert_eq!(result.bytes, xml.len()); server.await.unwrap();
+    }
+    #[tokio::test]
+    async fn respects_long_retry_after_and_does_not_retry_rejected_requests() {
+        for (status, headers, expected) in [("429 Too Many Requests", "Retry-After: 60\r\n", "rateLimited"), ("403 Forbidden", "", "rejected")] {
+            let (endpoint, server) = serve_responses(vec![format!("HTTP/1.1 {status}\r\n{headers}Content-Length: 0\r\nConnection: close\r\n\r\n")]).await;
+            assert_eq!(request_body(&client(2).unwrap(), &endpoint, &[], 1024, |_, _| {}).await.unwrap_err(), expected);
+            server.await.unwrap();
+        }
+    }
+    #[tokio::test]
+    async fn retry_wait_can_be_cancelled() {
+        let (endpoint, server) = serve_responses(vec!["HTTP/1.1 503 Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".into()]).await;
+        let client = client(2).unwrap(); let mut retrying = false;
+        let result = tokio::time::timeout(Duration::from_millis(200), request_body(&client, &endpoint, &[], 1024, |_, retry| retrying |= retry)).await;
+        assert!(result.is_err()); assert!(retrying); server.await.unwrap();
+    }
     #[tokio::test]
     async fn continues_node_limit_subdivision_beyond_two_levels() {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};

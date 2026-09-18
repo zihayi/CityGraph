@@ -133,6 +133,17 @@ button {
 
 .top-actions button.is-active { background: #0f5d65; color: #55e4df; }
 .top-measurement { position: relative; }
+.map-stage:has(.utility-tool-panel) .citygraph-canvas { cursor: crosshair; }
+.utility-tool-panel { position: absolute; z-index: 27; left: var(--left-dock-offset); top: 76px; width: min(310px, calc(100% - var(--left-dock-offset) - 20px)); padding: 14px; border-radius: 12px; color: #e7f3f4; }
+.utility-tool-panel p { font-size: 12px; color: #a9c4cb; line-height: 1.6; }
+.utility-tool-panel output { display: block; margin: 12px 0; color: #6aefeb; font-weight: 700; }
+.utility-tool-panel button { border: 1px solid #41616c; border-radius: 6px; padding: 6px 12px; margin-right: 8px; }
+.city-save-groups { display: grid; gap: 12px; overflow: auto; }
+.city-save-group { min-width: 0; border: 1px solid #34505d; border-radius: 10px; padding: 10px; }
+.city-save-group > summary { cursor: pointer; color: #e7f3f4; padding: 4px; }
+.city-save-group > summary span { margin-left: 12px; color: #92aeb9; font-size: 11px; }
+.city-save-group .save-timeline { margin-top: 10px; }
+.start-saves .city-save-groups { max-height: 340px; }
 .top-measurement > button { display: inline-flex; }
 .top-action-chevron { margin-left: -3px; opacity: .6; }
 .top-measurement-menu { position: absolute; z-index: 45; top: 42px; right: 0; display: grid; width: 224px; gap: 4px; padding: 6px; border-radius: 10px; }

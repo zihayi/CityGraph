@@ -1,4 +1,5 @@
-import { ArrowRight, BookOpen, Download, FolderOpen, Languages, Map, Music2, Plus, RefreshCw, Save, Volume2 } from "lucide-react";
+import { ArrowRight, BookOpen, Download, FolderOpen, Languages, Music2, Plus, RefreshCw, Save, Volume2 } from "lucide-react";
+import { CitySaveList } from "../Dialogs/CitySaveList";
 import { useEffect, useRef } from "react";
 import logoUrl from "../../../assets/logo.png?url";
 import { localeLabels, type Locale, type TranslationKey } from "../../i18n";
@@ -29,10 +30,9 @@ export function StartScreen(props: Props) {
   const root = useRef<HTMLElement>(null);
   useEffect(() => { root.current?.focus(); }, []);
   const latest = props.saves[0];
-  const date = (value: string) => { const parsed = new Date(value); return Number.isFinite(parsed.getTime()) ? parsed.toLocaleString(props.locale, { year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : value; };
   return <section ref={root} className="start-screen" role="dialog" aria-modal="true" aria-labelledby="start-title" tabIndex={-1} onKeyDown={(event) => {
     if (event.key !== "Tab") return;
-    const controls = root.current!.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled), select:not(:disabled)");
+    const controls = [...root.current!.querySelectorAll<HTMLElement>("summary, button:not(:disabled), input:not(:disabled), select:not(:disabled)")].filter((control) => control.getClientRects().length > 0);
     const first = controls[0]; const last = controls[controls.length - 1];
     if (event.shiftKey && (document.activeElement === first || document.activeElement === root.current)) { event.preventDefault(); last?.focus(); }
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
@@ -48,7 +48,7 @@ export function StartScreen(props: Props) {
           <p className="start-tip">{props.t("home.tip")}</p>
         </section>
         <section className="start-saves" aria-busy={props.loading}><header><h2>{props.t("home.saves")}</h2><button disabled={props.loading} type="button" aria-label={props.t("settings.refreshSaves")} onClick={props.onRefresh}><RefreshCw size={16}/></button></header>
-          {props.loading ? <p className="start-empty" role="status">{props.t("home.loading")}</p> : props.saves.length ? <div className="start-save-list">{props.saves.map((slot) => <button key={slot.folderName} type="button" onClick={() => props.onLoad(slot.folderName)}><span className="start-save-thumbnail">{slot.thumbnail ? <img src={slot.thumbnail} alt=""/> : <Map size={26}/>}</span><span><strong>{slot.mapName}</strong><small>{slot.saveName}{slot.autosave ? ` · ${props.t("settings.autosaveBadge")}` : ""}</small><time dateTime={slot.updatedAt}>{date(slot.updatedAt)}</time></span><ArrowRight size={16}/></button>)}</div> : <p className="start-empty">{props.t("home.noSaves")}</p>}
+          {props.loading ? <p className="start-empty" role="status">{props.t("home.loading")}</p> : props.saves.length ? <CitySaveList saves={props.saves} locale={props.locale} onLoad={props.onLoad} t={props.t}/> : <p className="start-empty">{props.t("home.noSaves")}</p>}
         </section>
       </div>
       <fieldset className="start-preferences" disabled={props.loading}><legend>{props.t("home.preferences")}</legend>

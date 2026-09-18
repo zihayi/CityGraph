@@ -28,6 +28,7 @@ import { canvasHandlePoints, dragCanvasBounds, type CanvasHandle, type CanvasRes
 import { spatialItemAtPoint, spatialItemKey, spatialItemsInPolygon, type SpatialSelectionItem } from "../editor/SpatialSelection";
 import type { SpatialEntityState } from "../commands/SpatialCommands";
 import type { RoadEdge, RoadNode } from "../model/City";
+import type { EyedropperSample } from "../app/store/eyedropper";
 
 export interface CameraState { x: number; y: number; zoom: number; rotation: number }
 export interface RoadContextMenu { x: number; y: number; edgeId: string; point: Point; nodeId?: string; canAdd: boolean; canDelete: boolean }
@@ -46,7 +47,7 @@ export interface BusToolSettings { system?: TransportSystem; mode: TransitMode; 
 export interface MeasurementToolSettings { mode: MeasurementMode }
 export interface ParkContextMenu { x: number; y: number; parkId: string; point: Point; segmentIndex?: number; vertexIndex?: number; canAdd: boolean; canDelete: boolean }
 export interface DistrictContextMenu { x: number; y: number; districtId: string; point: Point; segmentIndex?: number; vertexIndex?: number; canAdd: boolean; canDelete: boolean }
-export type ValidationKey = "road.invalid.water" | "road.invalid.short" | "zone.noRoadArea" | "landscaping.noRoadArea" | "landscaping.invalid" | "district.invalid" | "district.overlap" | "building.invalid" | "building.noRoadArea" | "water.invalid" | "water.invalid.road" | "water.island.invalid" | "water.island.outside" | "facility.invalid.building" | "bus.invalid.route" | "bus.invalid.stops" | "bus.invalid.loop" | "bus.placeStart" | "bus.placeEnd" | "bus.invalid.extension" | "rail.invalid.track" | "rail.invalid.line" | "rail.invalid.disconnected" | "rail.trackMiss" | "rail.stationMiss" | "rail.placeStart" | "rail.placeEnd" | "rail.placeStation" | "rail.invalid.extension" | "rail.invalid.station" | "block.invalid" | "block.invalid.water" | "university.invalid.zone" | "university.invalid.affiliationSchool" | "university.invalid.affiliationHospital" | "university.invalid.affiliationFacility" | "university.invalid.alumniCompany";
+export type ValidationKey = "eyedropper.empty" | "road.invalid.water" | "road.invalid.short" | "zone.noRoadArea" | "landscaping.noRoadArea" | "landscaping.invalid" | "district.invalid" | "district.overlap" | "building.invalid" | "building.noRoadArea" | "water.invalid" | "water.invalid.road" | "water.island.invalid" | "water.island.outside" | "facility.invalid.building" | "bus.invalid.route" | "bus.invalid.stops" | "bus.invalid.loop" | "bus.placeStart" | "bus.placeEnd" | "bus.invalid.extension" | "rail.invalid.track" | "rail.invalid.line" | "rail.invalid.disconnected" | "rail.trackMiss" | "rail.stationMiss" | "rail.placeStart" | "rail.placeEnd" | "rail.placeStation" | "rail.invalid.extension" | "rail.invalid.station" | "block.invalid" | "block.invalid.water" | "university.invalid.zone" | "university.invalid.affiliationSchool" | "university.invalid.affiliationHospital" | "university.invalid.affiliationFacility" | "university.invalid.alumniCompany";
 interface MapViewportOptions {
   layers: LayerVisibility;
   tool: EditorTool;
@@ -75,7 +76,7 @@ interface MapViewportOptions {
   onRoadMeasurement?: (measurement?: { x: number; y: number; text: string }) => void;
   onWaterMeasurement?: (measurement?: { x: number; y: number; text: string }) => void;
   onMeasurement?: (measurement?: { x: number; y: number; text: string }) => void;
-  onEyedropper?: (subtype?: RoadSubtype) => void;
+  onEyedropper?: (sample?: EyedropperSample) => void;
   onCampusCreated?: (zoneId: string) => void;
 }
 
@@ -131,6 +132,8 @@ export class MapViewport {
   private waterRectangleSeed = 1;
   private measurementStart?: Point;
   private measurementEnd?: Point;
+  private measurementClickPending = false;
+  private measurementPointerStart?: Point;
   private draggedWater?: { id: string; beforePoints: Point[]; startWorld: Point; vertexIndex?: number };
   private busDraft?: { stops: DraftBusStop[]; path: BusPathStep[] };
   private busExtension?: { lineId: string; endpoint: "start" | "end" };
@@ -142,6 +145,7 @@ export class MapViewport {
   private railStationInsertionLineId?: string;
   private disposed = false;
   private initialized = false;
+  private pendingCamera?: CameraState;
   private northAnimation = 0;
   private wheelAnimation = 0;
   private pendingWheelDelta = 0;
@@ -181,11 +185,13 @@ export class MapViewport {
     });
     this.resizeObserver = new ResizeObserver((entries) => { const entry = entries[0]; if (entry) this.resize(entry.contentRect.width, entry.contentRect.height); });
     this.resizeObserver.observe(this.host);
+    if (this.pendingCamera) { const state = this.pendingCamera; this.pendingCamera = undefined; this.setCameraState(state); }
   }
 
   public setLayerVisibility(layers: LayerVisibility): void { this.options = { ...this.options, layers }; this.renderer?.setVisibility(layers); }
-  public updateTool(tool: EditorTool): void { if (tool !== "marquee") this.cancelSpatialInteraction(); this.canvas?.classList.toggle("is-marquee", tool === "marquee"); this.setTool(tool); if (tool === "transit" && this.options.bus.system === "train" && this.options.rail.mode === "track" && this.railTrackDraft.length) this.updateRailTrackPreview(this.previousPointer); else if (tool === "transit" && this.activeRailSystem() && this.options.rail.mode === "line" && this.hasRailLineDraft()) this.renderRailLinePreview(this.previousPointer); }
+  public updateTool(tool: EditorTool): void { if (tool !== this.options.tool && (tool === "measure" || tool === "eyedropper")) this.handleWindowBlur(); if (tool !== "marquee") this.cancelSpatialInteraction(); this.canvas?.classList.toggle("is-marquee", tool === "marquee"); this.setTool(tool); if (tool === "transit" && this.options.bus.system === "train" && this.options.rail.mode === "track" && this.railTrackDraft.length) this.updateRailTrackPreview(this.previousPointer); else if (tool === "transit" && this.activeRailSystem() && this.options.rail.mode === "line" && this.hasRailLineDraft()) this.renderRailLinePreview(this.previousPointer); }
   public requestRender(): void { this.wakeRenderer(); }
+  public clearMeasurement(): void { this.wakeRenderer(); this.cancelMeasurement(); }
   public setTool(tool: EditorTool): void { if (tool !== "canvas") this.cancelCanvasInteraction(); this.options = { ...this.options, tool }; const selection = this.editor.selection; if (tool === "university" && this.options.university.mode === "edit" && selection?.kind === "zone" && !this.isCampusZone(this.editor.state.city.zones.find((zone) => zone.id === selection.id))) this.editor.select(null); this.options.onRoadContextMenu?.(); this.options.onZoneContextMenu?.(); this.options.onParkContextMenu?.(); if (tool !== "districts") this.options.onDistrictContextMenu?.(); this.options.onBuildingContextMenu?.(); this.renderer?.setTransitDisplay(this.shouldShowTransitLines(), this.options.bus.system); this.renderer?.setRoadEditable(this.isEditingRoadGeometry(), this.editor.selection, this.camera.zoom); this.renderer?.setZoneEditable(this.isEditingZones(), this.editor.selection); this.renderer?.setParkEditable(this.isEditingParks(), this.editor.selection, this.camera.zoom); this.renderer?.setDistrictEditable(this.isEditingDistricts(), this.editor.selection, this.camera.zoom); this.renderer?.setWaterEditable(this.isEditingWater(), this.editor.selection, this.camera.zoom); this.renderer?.setBuildingEditable(tool === "buildings" && this.options.building.mode === "edit", this.editor.selection, this.camera.zoom); if (tool !== "roads") this.cancelRoad(); if (!this.isZoneDrawingTool() && tool !== "zones") this.cancelZone(); if (tool !== "parks") this.cancelPark(); if (tool !== "districts") this.cancelDistrict(); if (tool !== "water") this.cancelWater(); if (tool !== "buildings") this.cancelBuilding(); if (tool !== "blocks") this.cancelBlock(); if (tool !== "measure") this.cancelMeasurement(); if (tool !== "transit") { this.cancelBus(); this.cancelRail(); } else if (this.options.bus.system === "bus" && this.options.bus.mode === "create") this.updateBusPreview(this.previousPointer); else if (this.options.bus.system === "train" && this.options.rail.mode === "track") this.updateRailTrackPreview(this.previousPointer); if (tool === "canvas" && this.editor.state.city.mapSize !== "unlimited") this.canvas?.classList.add("is-editing-canvas"); else this.canvas?.classList.remove("is-editing-canvas"); this.renderCanvasBoundary(); }
   public setRoadSettings(road: RoadToolSettings): void {
     const previous = this.options.road; const identityChanged = road.shape !== previous.shape || road.mode !== previous.mode || road.subtype !== previous.subtype || road.width !== previous.width || road.structure !== previous.structure;
@@ -206,7 +212,7 @@ export class MapViewport {
   public zoomIn(): void { this.zoomBy(1.22); }
   public zoomOut(): void { this.zoomBy(1 / 1.22); }
   public resetView(): void { this.fitCity(); }
-  public getCameraState(): CameraState { return { x: this.camera.x, y: this.camera.y, zoom: this.camera.zoom, rotation: this.camera.rotation }; }
+  public getCameraState(): CameraState { return this.pendingCamera ?? { x: this.camera.x, y: this.camera.y, zoom: this.camera.zoom, rotation: this.camera.rotation }; }
   public async captureThumbnail(): Promise<string | undefined> {
     if (!this.initialized || this.disposed) return undefined;
     try {
@@ -214,7 +220,7 @@ export class MapViewport {
       return await this.app.renderer.extract.base64({ target: this.app.stage, frame: new Rectangle(0, 0, this.viewportWidth, this.viewportHeight), resolution, format: "webp", quality: 0.78, clearColor: "#b8bcbd", antialias: true });
     } catch { return undefined; }
   }
-  public setCameraState(state: CameraState): void { this.camera.setState(state); this.applyCamera(); }
+  public setCameraState(state: CameraState): void { if (!this.initialized) { this.pendingCamera = { ...state }; return; } this.camera.setState(state); this.applyCamera(); }
   public getViewCenter(): Point { return this.camera.screenToMap({ x: this.viewportWidth / 2, y: this.viewportHeight / 2 }); }
   public panBy(dx: number, dy: number): void { if (!Number.isFinite(dx) || !Number.isFinite(dy)) return; this.camera.panBy(dx, dy); this.applyCamera(); }
   public zoomAtClientPosition(clientX: number, clientY: number, factor: number): void { const rect = this.canvas?.getBoundingClientRect(); if (!rect || ![clientX, clientY, factor].every(Number.isFinite) || factor <= 0) return; this.zoomBy(factor, { x: clientX - rect.left, y: clientY - rect.top }); }
@@ -316,11 +322,15 @@ export class MapViewport {
   private bindInput(): void {
     this.canvas?.addEventListener("pointerdown", this.handlePointerDown); this.canvas?.addEventListener("pointermove", this.handlePointerMove);
     this.canvas?.addEventListener("pointerup", this.handlePointerUp); this.canvas?.addEventListener("pointercancel", this.handlePointerCancel);
+    this.canvas?.addEventListener("lostpointercapture", this.handlePointerCancel);
+    window.addEventListener("pointerup", this.handlePointerUp); window.addEventListener("blur", this.handleWindowBlur);
     this.canvas?.addEventListener("wheel", this.handleWheel, { passive: false }); this.canvas?.addEventListener("contextmenu", this.handleContextMenu); window.addEventListener("keydown", this.handleKeyDown);
   }
   private unbindInput(): void {
     this.canvas?.removeEventListener("pointerdown", this.handlePointerDown); this.canvas?.removeEventListener("pointermove", this.handlePointerMove);
     this.canvas?.removeEventListener("pointerup", this.handlePointerUp); this.canvas?.removeEventListener("pointercancel", this.handlePointerCancel);
+    this.canvas?.removeEventListener("lostpointercapture", this.handlePointerCancel);
+    window.removeEventListener("pointerup", this.handlePointerUp); window.removeEventListener("blur", this.handleWindowBlur);
     this.canvas?.removeEventListener("wheel", this.handleWheel); this.canvas?.removeEventListener("contextmenu", this.handleContextMenu); window.removeEventListener("keydown", this.handleKeyDown);
   }
   private handlePointerDown = (event: PointerEvent): void => {
@@ -331,7 +341,10 @@ export class MapViewport {
     this.options.onParkContextMenu?.();
     this.options.onDistrictContextMenu?.();
     this.options.onBuildingContextMenu?.();
-    if (this.pointerId !== null || (event.button !== 0 && event.button !== 1)) return;
+    if (event.button !== 0 && event.button !== 1) return;
+    // A new press from the same pointer means its previous release was missed.
+    if (this.pointerId === event.pointerId) this.handlePointerCancel(event);
+    if (this.pointerId !== null) return;
     const screen = this.eventPoint(event); this.previousPointer = screen; this.pointerId = event.pointerId; this.canvas?.setPointerCapture(event.pointerId);
     if (event.button === 1) { event.preventDefault(); this.gesture = "rotate"; this.canvas?.classList.add("is-rotating"); return; }
     if (this.options.tool === "pan") { this.gesture = "pan"; this.canvas?.classList.add("is-panning"); return; }
@@ -346,8 +359,16 @@ export class MapViewport {
       if (!handle) { this.gesture = "pan"; this.canvas?.classList.add("is-panning"); return; }
       const before = structuredClone(this.editor.state.city.bounds); this.canvasDraft = structuredClone(before); this.draggedCanvas = { handle, before, startWorld: this.camera.screenToMap(screen) }; this.gesture = "canvas"; this.setCanvasCursor(handle, true); this.renderCanvasBoundary(); return;
     }
-    if (this.options.tool === "measure") { const world = this.camera.screenToMap(screen); this.measurementStart = world; this.measurementEnd = world; this.gesture = "measure"; this.canvas?.classList.add("is-measuring"); this.renderMeasurement(); return; }
-    if (this.options.tool === "eyedropper") { this.pointerId = null; const roadEdge = this.pickRoad(screen); const road = roadEdge ? this.editor.state.city.roads.find((candidate) => candidate.id === roadEdge.roadId) : undefined; if (road) { this.options.onEyedropper?.(road.subtype); this.options.onValidation?.(); } return; }
+    if (this.options.tool === "measure") {
+      const world = this.camera.screenToMap(screen);
+      if (this.measurementClickPending) { this.measurementEnd = world; this.measurementClickPending = false; this.renderMeasurement(); this.finishPointerCapture(event.pointerId); return; }
+      this.measurementStart = world; this.measurementEnd = world; this.measurementPointerStart = screen; this.gesture = "measure"; this.canvas?.classList.add("is-measuring"); this.renderMeasurement(); return;
+    }
+    if (this.options.tool === "eyedropper") {
+      this.finishPointerCapture(event.pointerId); const sample = this.sampleEyedropper(screen);
+      if (sample) { this.options.onValidation?.(); this.options.onEyedropper?.(sample); } else this.options.onValidation?.("eyedropper.empty");
+      return;
+    }
     if (this.options.tool === "roads") { if (this.options.road.shape === "edit") { if (!this.beginRoadInteraction(screen, event.shiftKey)) { if (!event.shiftKey) this.editor.select(null); this.gesture = "pan"; this.canvas?.classList.add("is-panning"); } return; } this.pointerId = null; this.handleRoadClick(screen); return; }
     if (this.options.tool === "transit") {
       if (this.activeRailSystem()) {
@@ -423,6 +444,7 @@ export class MapViewport {
     this.gesture = "pan"; this.canvas?.classList.add("is-panning");
   };
   private handlePointerMove = (event: PointerEvent): void => {
+    if (!this.options.inputEnabled) return;
     const current = this.eventPoint(event); this.wakeRenderer();
     if (this.options.tool === "canvas" && this.pointerId === null) { const handle = this.editor.state.city.mapSize === "unlimited" ? undefined : this.pickCanvasHandle(current); this.hoveredCanvasHandle = handle === "move" ? undefined : handle; this.setCanvasCursor(handle); this.renderCanvasBoundary(); }
     if (this.options.tool === "roads" && this.options.road.shape !== "edit" && this.pointerId === null) this.updatePreview(current);
@@ -432,6 +454,7 @@ export class MapViewport {
     if (this.options.tool === "water" && this.options.water.mode !== "edit" && this.pointerId === null) this.updateWaterPreview(current);
     if (this.options.tool === "buildings" && this.options.building.mode !== "edit" && this.options.building.mode !== "roadside" && this.options.building.mode !== "road-area" && this.pointerId === null) this.scheduleBuildingPreview(current);
     if (this.options.tool === "blocks" && this.pointerId === null) this.updateBlockPreview(current);
+    if (this.options.tool === "measure" && this.measurementClickPending && this.pointerId === null) { this.measurementEnd = this.camera.screenToMap(current); this.renderMeasurement(); }
     if (this.options.tool === "transit" && this.options.bus.system === "bus" && (this.options.bus.mode === "create" || this.busExtension) && this.pointerId === null) this.updateBusPreview(current);
     if (this.options.tool === "transit" && this.options.bus.system === "train" && this.options.rail.mode === "track" && this.pointerId === null && this.railTrackDraft.length) this.updateRailTrackPreview(current);
     if (this.options.tool === "transit" && this.activeRailSystem() && this.options.rail.mode === "line" && this.pointerId === null && this.railLineDraft.length) this.renderRailLinePreview(current);
@@ -495,6 +518,11 @@ export class MapViewport {
     if (event.pointerId !== this.pointerId) return;
     this.wakeRenderer();
     if (this.gesture === "canvas") { const bounds = this.canvasDraft; this.finishCanvasInteraction(event.pointerId); if (bounds) this.editor.setCanvasBounds(bounds); return; }
+    if (this.gesture === "measure") {
+      const screen = this.eventPoint(event); this.measurementEnd = this.camera.screenToMap(screen);
+      this.measurementClickPending = Boolean(this.measurementPointerStart && distance(this.measurementPointerStart, screen) < 4);
+      this.renderMeasurement(); this.canvas?.classList.remove("is-measuring"); this.finishPointerCapture(event.pointerId); return;
+    }
     if (this.gesture === "marquee" && this.marqueeStart) { const end = this.eventPoint(event); const moved = distance(this.marqueeStart, end) >= 4; if (moved) this.editor.selectSpatialItems(spatialItemsInPolygon(this.editor.state.city, this.marqueePolygon(this.marqueeStart, end), this.options.layers), this.marqueeAdditive); else if (!this.marqueeAdditive) this.editor.select(null); this.renderer?.setMarqueePreview?.(); }
     else if (this.gesture === "spatial-group" && this.draggedSpatial) { this.cancelScheduledSpatialRefresh(); this.editor.commitSpatialSelectionMove(this.draggedSpatial.before); }
     if (this.gesture === "node" && this.draggedNode) { const node = this.editor.state.city.roadNodes.find((entry) => entry.id === this.draggedNode?.id); if (node) this.editor.moveNode(node.id, this.draggedNode.before, { x: node.x, y: node.y }, this.draggedNode.mergeTargetId); }
@@ -530,6 +558,11 @@ export class MapViewport {
     if (event.pointerId !== this.pointerId || (this.gesture !== "water" && this.gesture !== "water-vertex")) { this.handlePointerUp(event); return; }
     this.cancelWater(); this.gesture = null; this.pointerId = null; if (this.canvas?.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId); this.canvas?.classList.remove("is-moving-water");
   };
+  private handleWindowBlur = (): void => {
+    if (this.pointerId === null) return;
+    const rect = this.canvas?.getBoundingClientRect();
+    this.handlePointerCancel(new PointerEvent("pointercancel", { pointerId: this.pointerId, clientX: this.previousPointer.x + (rect?.left ?? 0), clientY: this.previousPointer.y + (rect?.top ?? 0) }));
+  };
   private handleWheel = (event: WheelEvent): void => {
     if (!this.options.inputEnabled) return;
     if (this.gesture === "canvas") { event.preventDefault(); return; }
@@ -541,7 +574,9 @@ export class MapViewport {
     });
   };
   private handleContextMenu = (event: MouseEvent): void => {
+    if (!this.options.inputEnabled) return;
     this.wakeRenderer();
+    if (this.options.tool === "eyedropper") { event.preventDefault(); this.options.onValidation?.(); this.options.onEyedropper?.(); return; }
     if (this.options.tool === "canvas") { event.preventDefault(); this.cancelCanvasInteraction(); return; }
     if (this.busExtension) { event.preventDefault(); this.cancelBus(); return; }
     if (this.railStationInsertionLineId) { event.preventDefault(); this.cancelRail(); return; }
@@ -934,7 +969,16 @@ export class MapViewport {
   }
   private cancelBlock(): void { this.blockRectangleStart = undefined; this.renderer?.setBlockPreview(); this.options.onValidation?.(); }
   private renderMeasurement(): void { if (this.options.tool !== "measure" || !this.measurementStart || !this.measurementEnd) return; this.renderer?.setMeasurementPreview(this.options.measurement.mode, this.measurementStart, this.measurementEnd, this.camera.zoom); const screen = this.camera.mapToScreen(this.measurementEnd); this.options.onMeasurement?.({ x: screen.x + 14, y: screen.y - 18, text: formatMeasurement(this.options.measurement.mode, this.measurementStart, this.measurementEnd) }); }
-  private cancelMeasurement(): void { this.measurementStart = undefined; this.measurementEnd = undefined; this.canvas?.classList.remove("is-measuring"); this.renderer?.setMeasurementPreview(); this.options.onMeasurement?.(); }
+  private cancelMeasurement(): void { if (this.gesture === "measure" && this.pointerId !== null) this.finishPointerCapture(this.pointerId); this.measurementStart = undefined; this.measurementEnd = undefined; this.measurementPointerStart = undefined; this.measurementClickPending = false; this.canvas?.classList.remove("is-measuring"); this.renderer?.setMeasurementPreview(); this.options.onMeasurement?.(); }
+
+  private sampleEyedropper(screen: Point): EyedropperSample | undefined {
+    const building = this.pickBuilding(screen); if (building) return { kind: "building", building };
+    const edge = this.pickRoad(screen); const road = edge && this.editor.state.city.roads.find((road) => road.id === edge.roadId);
+    if (road && edge) return { kind: "road", road, edge };
+    const park = this.pickPark(screen); if (park) return { kind: "park", park };
+    const zone = this.pickZone(screen); if (zone) return { kind: "zone", zone };
+    return undefined;
+  }
   private getRoadFillPolygon(point: Point): Point[] | undefined { this.roadFillQuery ??= createRoadFillQuery(this.editor.state.city); return this.roadFillQuery(point)?.polygon.map((vertex) => ({ ...vertex })); }
   private handleShapeClick(screen: Point): void {
     const point = this.constrainPoint(this.camera.screenToMap(screen));

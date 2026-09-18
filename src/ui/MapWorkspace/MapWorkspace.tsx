@@ -1,7 +1,8 @@
 import { Focus, Minus, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
-import { useEditorStore, type BlockRoadSubtype, type EditorTool, type KeyboardShortcuts, type LayerVisibility } from "../../app/store/editorStore";
+import { useEditorStore, type EditorTool, type KeyboardShortcuts, type LayerVisibility } from "../../app/store/editorStore";
+import type { EyedropperSample } from "../../app/store/eyedropper";
 import type { Editor } from "../../editor/Editor";
 import type { TranslationKey } from "../../i18n";
 import type { BlockToolSettings, BuildingContextMenu, BuildingToolSettings, BusToolSettings, DistrictContextMenu, DistrictToolSettings, LandscapingToolSettings, MeasurementToolSettings, ParkContextMenu, RailToolSettings, RoadContextMenu, RoadToolSettings, UniversityToolSettings, ValidationKey, WaterToolSettings, ZoneContextMenu, ZoneToolSettings } from "../../map/MapViewport";
@@ -27,7 +28,7 @@ import { RailToolPalette } from "../RailToolPalette/RailToolPalette";
 
 interface Props {
   editor: Editor; layers: LayerVisibility; tool: EditorTool; road: RoadToolSettings; zone: ZoneToolSettings; landscaping: LandscapingToolSettings; district: DistrictToolSettings; building: BuildingToolSettings; water: WaterToolSettings; block: BlockToolSettings; university: UniversityToolSettings; bus: BusToolSettings & { rail: RailToolSettings }; measurement: MeasurementToolSettings; shortcuts: KeyboardShortcuts; inputEnabled: boolean; mapRef: RefObject<MapCanvasHandle | null>;
-  onZoomChange: (percent: number) => void; validation?: ValidationKey; onValidation: (key?: ValidationKey) => void; onEyedropper: (subtype?: BlockRoadSubtype) => void; t: (key: TranslationKey) => string;
+  onZoomChange: (percent: number) => void; validation?: ValidationKey; onValidation: (key?: ValidationKey) => void; onEyedropper: (sample?: EyedropperSample) => void; t: (key: TranslationKey) => string;
 }
 export function MapWorkspace(props: Props) {
   const compassNeedle = useRef<HTMLDivElement>(null);
@@ -93,6 +94,12 @@ export function MapWorkspace(props: Props) {
       {props.tool === "transit" && (props.bus.system === "train" || props.bus.system === "metro") && <RailToolPalette editor={props.editor} system={props.bus.system} t={props.t}/>}
      {affiliationPick && <div className="university-affiliation-picker glass-panel"><span>{props.t(affiliationPick.kind === "school" ? "university.pickSchool" : affiliationPick.kind === "hospital" ? "university.pickHospital" : affiliationPick.kind === "alumni-company" ? "university.pickAlumniCompany" : "university.pickFacility")}</span><button type="button" onClick={() => { setAffiliationPick(undefined); setCurrentTool("university"); props.editor.select({ kind: "zone", id: affiliationPick.campusId }); }}>{props.t("common.cancel")}</button></div>}
      {props.validation && <div className="validation-toast">{props.t(props.validation)}</div>}
+    {(props.tool === "measure" || props.tool === "eyedropper") && <div className="utility-tool-panel glass-panel">
+      <strong>{props.t(props.tool === "eyedropper" ? "tools.eyedropper" : props.measurement.mode === "area" ? "measure.area" : "measure.distance")}</strong>
+      <p>{props.t(props.tool === "eyedropper" ? "eyedropper.help" : "measure.instructions")}</p>
+      {props.tool === "measure" && <><output aria-live="polite">{measurement?.text ?? "—"}</output><button type="button" disabled={!measurement} onClick={() => props.mapRef.current?.clearMeasurement()}>{props.t("measure.clear")}</button></>}
+      <button type="button" onClick={() => props.tool === "eyedropper" ? props.onEyedropper() : setCurrentTool("select")}>{props.t("common.cancel")}</button>
+    </div>}
     {measurement && <div className="road-measurement" style={{ left: measurement.x, top: measurement.y }}>{measurement.text}</div>}
     {roadMenu && <div className="road-context-menu glass-panel" style={{ left: roadMenu.x, top: roadMenu.y }}><button type="button" disabled={!roadMenu.canAdd} onClick={() => { const nodeId = props.editor.splitRoadEdge(roadMenu.edgeId, roadMenu.point); props.editor.select({ kind: "node", id: nodeId }); setRoadMenu(undefined); }}>+ {props.t("road.node.add")}</button><button type="button" disabled={!roadMenu.canDelete || !roadMenu.nodeId} onClick={() => { if (roadMenu.nodeId) props.editor.dissolveRoadNode(roadMenu.nodeId); setRoadMenu(undefined); }}>- {props.t("road.node.delete")}</button></div>}
     {zoneMenu && <div className="road-context-menu glass-panel" style={{ left: zoneMenu.x, top: zoneMenu.y }}><button type="button" disabled={!zoneMenu.canAdd || zoneMenu.segmentIndex === undefined} onClick={() => { if (zoneMenu.segmentIndex !== undefined) props.editor.addZoneVertex(zoneMenu.zoneId, zoneMenu.segmentIndex, zoneMenu.point); setZoneMenu(undefined); }}>+ {props.t("zone.node.add")}</button><button type="button" disabled={!zoneMenu.canDelete || zoneMenu.vertexIndex === undefined} onClick={() => { if (zoneMenu.vertexIndex !== undefined) props.editor.deleteZoneVertex(zoneMenu.zoneId, zoneMenu.vertexIndex); setZoneMenu(undefined); }}>- {props.t("zone.node.delete")}</button></div>}

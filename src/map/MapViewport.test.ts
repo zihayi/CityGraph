@@ -10,6 +10,7 @@ import { createRiverPolygon, isValidWaterPolygon } from "../geometry/WaterGeomet
 import type { BusLine, City } from "../model/City";
 import { MapRenderer } from "./MapRenderer";
 import { MapViewport, type BuildingToolSettings, type RailToolSettings, type WaterToolSettings } from "./MapViewport";
+import { eyedropperSettings } from "../app/store/eyedropper";
 
 vi.mock("pixi.js", () => ({ Application: vi.fn(), Rectangle: vi.fn() }));
 vi.mock("./MapRenderer", () => ({ MapRenderer: vi.fn() }));
@@ -118,7 +119,98 @@ function fixture(mode: BuildingToolSettings["mode"] = "road-area", pointerHandle
 
 afterEach(() => { vi.restoreAllMocks(); vi.clearAllMocks(); vi.unstubAllGlobals(); });
 
+function utilityFixture(tool: "measure" | "eyedropper") {
+  const base = fixture("preset", true); base.viewport.options.tool = tool;
+  base.camera.screenToMap.mockImplementation((point) => ({ x: point.x / 2, y: point.y / 2 }));
+  const canvas = { classList: { add: vi.fn(), remove: vi.fn(), toggle: vi.fn() }, addEventListener: vi.fn(), removeEventListener: vi.fn(), setPointerCapture: vi.fn(), hasPointerCapture: vi.fn().mockReturnValue(true), releasePointerCapture: vi.fn(), getBoundingClientRect: () => ({ left: 0, top: 0 }) };
+  Object.assign(base.viewport, { canvas }); Object.assign(base.renderer, { setMeasurementPreview: vi.fn(), setNodeSnapTarget: vi.fn() });
+  const onMeasurement = vi.fn(); const onEyedropper = vi.fn<NonNullable<ViewportOptions["onEyedropper"]>>();
+  Object.assign(base.viewport.options, { onMeasurement, onEyedropper });
+  const viewport = base.viewport as unknown as { options: ViewportOptions; handlePointerDown(event: PointerEvent): void; handlePointerMove(event: PointerEvent): void; handlePointerUp(event: PointerEvent): void; handlePointerCancel(event: PointerEvent): void; handleContextMenu(event: MouseEvent): void; clearMeasurement(): void; setMeasurementSettings: MapViewport["setMeasurementSettings"]; pointerId: number | null };
+  const pointer = (x: number, y: number) => ({ clientX: x, clientY: y, pointerId: 1, button: 0, preventDefault: vi.fn() }) as unknown as PointerEvent;
+  return { ...base, viewport, canvas, onMeasurement, onEyedropper, pointer };
+}
+
+describe("MapViewport utility tools", () => {
+  it("accepts the first measurement after a previous pointer release was missed", () => {
+    const { viewport, pointer, onMeasurement } = utilityFixture("measure");
+    Object.assign(viewport, { pointerId: 1, gesture: "pan" });
+    viewport.handlePointerDown(pointer(0, 0)); viewport.handlePointerUp(pointer(600, 800));
+    expect(onMeasurement).toHaveBeenLastCalledWith(expect.objectContaining({ text: "500 m" }));
+    expect(viewport.pointerId).toBeNull();
+  });
+  it("releases capture on lost capture and window blur and unregisters fallback listeners", () => {
+    const { viewport, canvas, pointer, onMeasurement } = utilityFixture("measure");
+    const addEventListener = vi.fn(); const removeEventListener = vi.fn(); Object.assign(window, { addEventListener, removeEventListener });
+    vi.stubGlobal("PointerEvent", class { constructor(_type: string, init: PointerEventInit) { Object.assign(this, init); } });
+    const prototype = MapViewport.prototype as unknown as { bindInput(): void; unbindInput(): void };
+    prototype.bindInput.call(viewport);
+    const lost = canvas.addEventListener.mock.calls.find(([name]) => name === "lostpointercapture")![1];
+    const blur = addEventListener.mock.calls.find(([name]) => name === "blur")![1];
+    for (const interrupt of [() => lost(pointer(50, 50)), () => blur()]) {
+      viewport.handlePointerDown(pointer(0, 0)); interrupt(); expect(viewport.pointerId).toBeNull();
+      viewport.handlePointerDown(pointer(0, 0)); viewport.handlePointerUp(pointer(600, 800));
+      expect(onMeasurement).toHaveBeenLastCalledWith(expect.objectContaining({ text: "500 m" }));
+    }
+    prototype.unbindInput.call(viewport);
+    expect(canvas.removeEventListener).toHaveBeenCalledWith("lostpointercapture", lost);
+    expect(removeEventListener).toHaveBeenCalledWith("blur", blur);
+    expect(removeEventListener).toHaveBeenCalledWith("pointerup", expect.any(Function));
+  });
+  it("measures world distance with two clicks, retains the result and releases capture", () => {
+    const { viewport, pointer, onMeasurement, canvas, city } = utilityFixture("measure"); const before = structuredClone(city);
+    viewport.handlePointerDown(pointer(0, 0)); viewport.handlePointerUp(pointer(0, 0));
+    viewport.handlePointerMove(pointer(600, 800)); expect(onMeasurement).toHaveBeenLastCalledWith(expect.objectContaining({ text: "500 m" }));
+    viewport.handlePointerDown(pointer(600, 800)); viewport.handlePointerUp(pointer(600, 800));
+    viewport.handlePointerMove(pointer(100, 100)); expect(onMeasurement).toHaveBeenLastCalledWith(expect.objectContaining({ text: "500 m" }));
+    expect(viewport.pointerId).toBeNull(); expect(canvas.releasePointerCapture).toHaveBeenCalled(); expect(city).toEqual(before);
+    viewport.handleContextMenu(pointer(0, 0)); expect(onMeasurement).toHaveBeenLastCalledWith();
+  });
+  it("uses the release position for area measurements and supports repeated drag and clear", () => {
+    const { viewport, pointer, onMeasurement } = utilityFixture("measure"); viewport.setMeasurementSettings({ mode: "area" });
+    viewport.handlePointerDown(pointer(200, 400)); viewport.handlePointerUp(pointer(0, 0));
+    expect(onMeasurement).toHaveBeenLastCalledWith(expect.objectContaining({ text: "100 m x 200 m | 2 ha" }));
+    viewport.clearMeasurement(); expect(onMeasurement).toHaveBeenLastCalledWith();
+    viewport.handlePointerDown(pointer(20, 20)); viewport.handlePointerCancel(pointer(80, 80));
+    expect(viewport.pointerId).toBeNull(); expect(onMeasurement).toHaveBeenLastCalledWith();
+    viewport.handlePointerDown(pointer(0, 0)); viewport.handlePointerUp(pointer(200, 200));
+    expect(onMeasurement).toHaveBeenLastCalledWith(expect.objectContaining({ text: "100 m x 100 m | 1 ha" }));
+    viewport.setMeasurementSettings({ mode: "distance" }); expect(onMeasurement).toHaveBeenLastCalledWith();
+  });
+  it("samples visible roads including width and structure without modifying the city", () => {
+    const { viewport, city, pointer, onEyedropper, onValidation } = utilityFixture("eyedropper");
+    city.roadNodes = [{ id: "a", x: 0, y: 100 }, { id: "b", x: 200, y: 100 }];
+    city.roads = [{ id: "r", name: "Bridge", category: "normal", subtype: "medium", width: 17.5, segmentIds: ["e"] }];
+    city.roadEdges = [{ id: "e", roadId: "r", name: "Bridge", startNodeId: "a", endNodeId: "b", structure: "elevated", level: 1, geometry: { type: "line" } }];
+    const before = structuredClone(city); viewport.handlePointerDown(pointer(200, 200));
+    const sample = onEyedropper.mock.calls[0]![0]!;
+    expect(eyedropperSettings(sample, "select")).toMatchObject({ currentTool: "roads", roadSubtype: "medium", roadWidth: 17.5, roadStructure: "elevated" });
+    expect(eyedropperSettings(sample, "blocks").currentTool).toBe("blocks"); expect(city).toEqual(before);
+    viewport.options.layers.roads = false; viewport.handlePointerDown(pointer(200, 200));
+    expect(onEyedropper).toHaveBeenCalledTimes(1); expect(onValidation).toHaveBeenLastCalledWith("eyedropper.empty"); expect(viewport.pointerId).toBeNull();
+  });
+  it("samples buildings, parks and zones in visible order without copying identity", () => {
+    const { viewport, city, pointer, onEyedropper } = utilityFixture("eyedropper");
+    const polygon = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }];
+    city.parks = [{ id: "park", points: polygon, color: "#123456", opacity: 0.65, source: "custom" }];
+    city.zones = [{ id: "campus", name: "Campus", universityId: "u", type: "education", source: "custom", polygon, opacity: 0.45, iconOpacity: 0.6 }];
+    viewport.handlePointerDown(pointer(50, 50)); expect(eyedropperSettings(onEyedropper.mock.lastCall![0]!, "select")).toMatchObject({ currentTool: "buildings", buildingFloors: 2, buildingHeight: 6 });
+    viewport.options.layers.buildings = false; viewport.handlePointerDown(pointer(50, 50));
+    expect(eyedropperSettings(onEyedropper.mock.lastCall![0]!, "select")).toEqual({ currentTool: "parks", landscapingMode: "custom", landscapingColor: "#123456", landscapingOpacity: 0.65 });
+    viewport.options.layers.parks = false; viewport.handlePointerDown(pointer(50, 50));
+    const parameters = eyedropperSettings(onEyedropper.mock.lastCall![0]!, "select"); expect(parameters).toMatchObject({ currentTool: "zones", zoneType: "education", zoneIconOpacity: 0.6 }); expect(parameters).not.toHaveProperty("universityId");
+  });
+});
+
 describe("MapViewport building generation", () => {
+  it("restores a queued camera after asynchronous viewport initialization", async () => {
+    const { viewport, camera } = fixture(); const state = { x: 42, y: 75, zoom: 3, rotation: 0.5 };
+    const setState = vi.fn(); Object.assign(camera, { setState }); Object.assign(viewport, { applyCamera: vi.fn() });
+    (viewport as unknown as MapViewport).setCameraState(state);
+    expect(setState).not.toHaveBeenCalled();
+    expect((viewport as unknown as MapViewport).getCameraState()).toEqual(state);
+    await viewport.initialize(); expect(setState).toHaveBeenCalledWith(state);
+  });
   it("does no work and shows no error at zero density", () => {
     const { viewport, editor, onValidation, expectNoFillComputation } = fixture();
     viewport.options.building.density = 0;

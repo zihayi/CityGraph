@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createNewCity } from "../model/mapGenerator";
-import { SaveManager } from "./SaveManager";
+import { groupCitySaves, SaveManager } from "./SaveManager";
 import { Editor } from "../editor/Editor";
 import { roadIdentityGroupEdges } from "../editor/RoadIdentity";
 import { createEmptyCompany, createEmptyHospital, createEmptyUniversity, createEmptyUniversityProfile, defaultEconomySettings, defaultFacilityColor, defaultLandscapingColor, defaultLandscapingOpacity, facilityDefaultColor } from "../model/City";
@@ -450,6 +450,34 @@ describe("SaveManager", () => {
     for (let hour = 1; hour <= 3; hour += 1) { vi.setSystemTime(new Date(`2026-01-01T1${hour}:00:00Z`)); await manager.autoSave(city, camera, { maxSlots: 2 }); }
     const metadata = await Promise.all([...saves.directories.values()].map(async (folder) => JSON.parse(folder.files.get("metadata.json")!.content)));
     expect(metadata.filter((value) => value.autosave)).toHaveLength(2); expect(metadata.filter((value) => !value.autosave)).toHaveLength(1); expect(saves.directories.has("Rolling City")).toBe(true);
+  });
+
+  it("isolates same-name cities and retains each city's automatic history across renames", async () => {
+    vi.useFakeTimers(); const saves = new MemoryDirectory(); installStorage(saves); const manager = new SaveManager();
+    const a = createEmptyCity("Same name"); const b = createEmptyCity("Same name"); const camera = { x: 0, y: 0, zoom: 1, rotation: 0 };
+    vi.setSystemTime(new Date(2025, 11, 31));
+    await manager.saveAs(a.name, a, camera); await manager.saveAs(b.name, b, camera);
+    expect((await manager.load("Same name")).city.id).toBe(a.id); expect((await manager.load("Same name-2")).city.id).toBe(b.id);
+    for (let index = 0; index < 3; index++) {
+      vi.setSystemTime(new Date(2026, 0, 1, index));
+      await manager.autoSave(a, camera, { maxSlots: 2 }); await manager.autoSave(b, camera, { maxSlots: 2 });
+    }
+    a.name = "Renamed"; vi.setSystemTime(new Date(2026, 0, 1, 4)); await manager.autoSave(a, camera, { maxSlots: 2 });
+    const groups = groupCitySaves(await manager.listSaves()); expect(groups).toHaveLength(2);
+    expect(groups[0]).toMatchObject({ id: a.id, name: "Renamed" });
+    for (const group of groups) { expect(group.slots.filter((slot) => slot.autosave)).toHaveLength(2); expect(group.slots.filter((slot) => !slot.autosave)).toHaveLength(1); }
+    const automatic = groups[0]!.slots.find((slot) => slot.autosave)!; await manager.load(automatic.folderName);
+    expect(manager.hasCurrentSave).toBe(false); await manager.saveAs(a.name, a, camera);
+    expect((await manager.listSaves()).find((slot) => slot.folderName === automatic.folderName)?.autosave).toBe(true);
+  });
+
+  it("reads older city IDs from ai.json and uses a stable fallback for pre-AI saves", async () => {
+    const saves = new MemoryDirectory(); installStorage(saves); const manager = new SaveManager(); const city = createEmptyCity("Legacy"); const camera = { x: 0, y: 0, zoom: 1, rotation: 0 };
+    await manager.saveAs(city.name, city, camera); const folder = saves.directories.get(city.name)!;
+    const metadata = JSON.parse(folder.files.get("metadata.json")!.content); delete metadata.cityId; folder.files.get("metadata.json")!.content = JSON.stringify(metadata);
+    expect((await manager.listSaves())[0]?.cityId).toBe(city.id);
+    folder.files.delete("ai.json"); const loaded = await manager.load("Legacy"); expect((await manager.load("Legacy")).city.id).toBe(loaded.city.id);
+    await manager.autoSave(loaded.city, camera, { maxSlots: 1 }); expect(groupCitySaves(await manager.listSaves())).toHaveLength(1);
   });
 
   it("keeps two recovery snapshots separate from managed saves", async () => {

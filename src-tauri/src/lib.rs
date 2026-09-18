@@ -5,8 +5,10 @@ use std::{
     collections::HashSet,
     fs,
     path::{Path, PathBuf},
-    time::{Duration, SystemTime},
+    time::Duration,
 };
+#[cfg(test)]
+use std::time::SystemTime;
 use tauri::Manager;
 mod osm_downloader;
 
@@ -33,6 +35,7 @@ struct SaveFiles {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct SaveSlot {
+    city_id: String,
     folder_name: String,
     save_name: String,
     map_name: String,
@@ -479,15 +482,24 @@ fn citygraph_data_path() -> Result<String, String> {
 #[tauri::command]
 fn citygraph_saves_path(app: tauri::AppHandle) -> Result<String, String> {
     let saves = program_root_dir()?.join("save");
-    fs::create_dir_all(&saves).map_err(|error| error.to_string())?;
+    let mut previous_directories = Vec::new();
     if let Ok(previous) = app.path().app_data_dir() {
-        copy_missing_files(&previous.join("saves"), &saves)?;
+        previous_directories.push(previous.join("saves"));
     }
-    copy_missing_files(&executable_dir()?.join("data").join("saves"), &saves)?;
+    previous_directories.push(executable_dir()?.join("data").join("saves"));
+    migrate_legacy_saves(&previous_directories, &saves)?;
     saves
         .into_os_string()
         .into_string()
         .map_err(|_| "Invalid save path".to_string())
+}
+
+fn migrate_legacy_saves(sources: &[PathBuf], saves: &Path) -> Result<(), String> {
+    fs::create_dir_all(saves).map_err(|error| error.to_string())?;
+    let marker = saves.join(".legacy-migration-complete");
+    if marker.exists() { return Ok(()); }
+    for source in sources { copy_missing_files(source, saves)?; }
+    fs::write(marker, "1").map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -601,7 +613,13 @@ fn list_city_saves(parent_path: String) -> Result<Vec<SaveSlot>, String> {
             continue;
         };
         let folder_name = entry.file_name().to_string_lossy().into_owned();
+        let city_id = metadata.get("cityId").and_then(|value| value.as_str()).filter(|id| !id.is_empty()).map(str::to_string)
+            .or_else(|| fs::read_to_string(entry.path().join("ai.json")).ok()
+                .and_then(|content| serde_json::from_str::<serde_json::Value>(&content).ok())
+                .and_then(|ai| ai.get("cityId").and_then(|value| value.as_str()).filter(|id| !id.is_empty()).map(str::to_string)))
+            .unwrap_or_else(|| format!("legacy:{}", metadata.get("mapName").and_then(|value| value.as_str()).unwrap_or(&folder_name)));
         saves.push(SaveSlot {
+            city_id,
             save_name: metadata
                 .get("saveName")
                 .and_then(|value| value.as_str())
@@ -635,41 +653,11 @@ fn list_city_saves(parent_path: String) -> Result<Vec<SaveSlot>, String> {
 }
 
 #[tauri::command]
-fn prune_auto_saves(parent_path: String, max_slots: usize) -> Result<(), String> {
-    let parent = PathBuf::from(parent_path);
-    if !parent.exists() {
-        return Ok(());
-    }
-    let mut saves = Vec::new();
-    for entry in fs::read_dir(&parent).map_err(|error| error.to_string())? {
-        let entry = entry.map_err(|error| error.to_string())?;
-        if !entry
-            .file_type()
-            .map_err(|error| error.to_string())?
-            .is_dir()
-        {
-            continue;
-        }
-        let Ok(content) = fs::read_to_string(entry.path().join("metadata.json")) else {
-            continue;
-        };
-        let Ok(metadata) = serde_json::from_str::<serde_json::Value>(&content) else {
-            continue;
-        };
-        if metadata.get("autosave").and_then(|value| value.as_bool()) != Some(true) {
-            continue;
-        }
-        let modified = entry
-            .metadata()
-            .and_then(|value| value.modified())
-            .unwrap_or(SystemTime::UNIX_EPOCH);
-        saves.push((entry.path(), modified));
-    }
-    saves.sort_by(|a, b| b.1.cmp(&a.1));
-    for (index, (path, _)) in saves.into_iter().enumerate() {
-        if index >= max_slots.max(1) {
-            fs::remove_dir_all(path).map_err(|error| error.to_string())?;
-        }
+fn prune_auto_saves(parent_path: String, max_slots: usize, city_id: Option<String>) -> Result<(), String> {
+    let parent = PathBuf::from(&parent_path);
+    let saves = list_city_saves(parent_path)?;
+    for slot in saves.into_iter().filter(|slot| slot.autosave && city_id.as_ref().is_none_or(|id| id == &slot.city_id)).skip(max_slots.max(1)) {
+        fs::remove_dir_all(parent.join(slot.folder_name)).map_err(|error| error.to_string())?;
     }
     Ok(())
 }
@@ -784,6 +772,31 @@ mod tests {
         assert!(first.starts_with("custom-logo:"));
         assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn prunes_only_the_requested_city_and_reads_legacy_identity() {
+        let root = temporary_directory("city-autosaves");
+        for (name, city, time, autosave) in [("old", "a", "2026-01-01", true), ("new", "a", "2026-01-02", true), ("other", "b", "2026-01-01", true), ("manual", "a", "2026-01-01", false)] {
+            let folder = root.join(name); fs::create_dir_all(&folder).unwrap();
+            fs::write(folder.join("metadata.json"), serde_json::json!({ "mapName": "Same name", "updatedAt": time, "autosave": autosave }).to_string()).unwrap();
+            fs::write(folder.join("ai.json"), serde_json::json!({ "cityId": city }).to_string()).unwrap();
+        }
+        prune_auto_saves(root.to_string_lossy().into_owned(), 1, Some("a".into())).unwrap();
+        assert!(!root.join("old").exists()); assert!(root.join("new").exists()); assert!(root.join("other").exists()); assert!(root.join("manual").exists());
+        prune_auto_saves(root.to_string_lossy().into_owned(), 1, None).unwrap();
+        assert!(!root.join("other").exists()); assert!(root.join("manual").exists());
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn does_not_resurrect_pruned_backups_during_legacy_migration() {
+        let root = temporary_directory("save-migration"); let source = root.join("old"); let saves = root.join("save");
+        fs::create_dir_all(source.join("autosave")).unwrap(); fs::write(source.join("autosave/metadata.json"), "{}").unwrap();
+        migrate_legacy_saves(&[source.clone()], &saves).unwrap(); assert!(saves.join("autosave").exists());
+        fs::remove_dir_all(saves.join("autosave")).unwrap(); migrate_legacy_saves(&[source.clone()], &saves).unwrap();
+        assert!(!saves.join("autosave").exists()); assert!(source.join("autosave/metadata.json").exists());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

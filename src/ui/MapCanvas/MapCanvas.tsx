@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef } from "react";
-import type { BlockRoadSubtype, EditorTool, KeyboardShortcuts, LayerVisibility } from "../../app/store/editorStore";
+import type { EditorTool, KeyboardShortcuts, LayerVisibility } from "../../app/store/editorStore";
+import type { EyedropperSample } from "../../app/store/eyedropper";
 import type { Editor } from "../../editor/Editor";
 import { syncViewportSettings, type MapCanvasSettings } from "./MapCanvasSettings";
 import { MapViewport, type BlockToolSettings, type BuildingContextMenu, type BuildingToolSettings, type BusToolSettings, type CameraState, type DistrictContextMenu, type DistrictToolSettings, type LandscapingToolSettings, type MeasurementToolSettings, type ParkContextMenu, type RailToolSettings, type RoadContextMenu, type RoadToolSettings, type UniversityToolSettings, type ValidationKey, type WaterToolSettings, type ZoneContextMenu, type ZoneToolSettings } from "../../map/MapViewport";
@@ -9,6 +10,7 @@ export interface MapCanvasHandle {
   zoomOut: () => void;
   resetView: () => void;
   northUp: () => void;
+  clearMeasurement: () => void;
   getCameraState: () => CameraState;
   getViewCenter: () => { x: number; y: number };
   getViewportBounds: () => { x: number; y: number; width: number; height: number };
@@ -50,7 +52,7 @@ interface Props {
   onRoadMeasurement: (measurement?: { x: number; y: number; text: string }) => void;
   onWaterMeasurement: (measurement?: { x: number; y: number; text: string }) => void;
   onMeasurement: (measurement?: { x: number; y: number; text: string }) => void;
-  onEyedropper: (subtype?: BlockRoadSubtype) => void;
+  onEyedropper: (sample?: EyedropperSample) => void;
   onCampusCreated: (zoneId: string) => void;
 }
 
@@ -61,6 +63,7 @@ export const MapCanvas = forwardRef<MapCanvasHandle, Props>(function MapCanvas(p
   callbacks.current = { onZoomChange: props.onZoomChange, onRotationChange: props.onRotationChange, onCameraChange: props.onCameraChange, onValidation: props.onValidation, onRoadContextMenu: props.onRoadContextMenu, onZoneContextMenu: props.onZoneContextMenu, onParkContextMenu: props.onParkContextMenu, onDistrictContextMenu: props.onDistrictContextMenu, onBuildingContextMenu: props.onBuildingContextMenu, onRoadMeasurement: props.onRoadMeasurement, onWaterMeasurement: props.onWaterMeasurement, onMeasurement: props.onMeasurement, onEyedropper: props.onEyedropper, onCampusCreated: props.onCampusCreated };
 
   useImperativeHandle(ref, () => ({
+    clearMeasurement: () => viewportRef.current?.clearMeasurement(),
     zoomIn: () => viewportRef.current?.zoomIn(), zoomOut: () => viewportRef.current?.zoomOut(), resetView: () => viewportRef.current?.resetView(), northUp: () => viewportRef.current?.northUp(),
     getCameraState: () => viewportRef.current?.getCameraState() ?? { x: 0, y: 0, zoom: 1, rotation: 0 }, setCameraState: (state) => viewportRef.current?.setCameraState(state),
     getViewCenter: () => viewportRef.current?.getViewCenter() ?? { x: 0, y: 0 },
