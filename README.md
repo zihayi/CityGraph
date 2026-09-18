@@ -23,7 +23,17 @@ CityGraph 是一款中文友好的二维城市地图创作工具。你可以手�
 
 ## 第一次启动
 
-Windows 桌面版运行 `citygraph.exe`。启动动画可以点击或按键跳过，之后会进入**开始页面**，不会自动打开 Riverside Bay。
+**Windows 玩家直接双击主目录下的 `CityGraph.exe` 即可开始，不需要安装 Node.js、npm 或 Rust。**
+
+1. [下载 CityGraph.exe](https://github.com/zihayi/CityGraph/raw/refs/heads/main/CityGraph.exe)。
+2. 放到自己有写入权限的文件夹，例如 `D:\Games\CityGraph`。
+3. 双击启动，在首页选择新建地图或打开存档。
+
+可以把 `CityGraph.exe`、`运行说明.txt` 和本 README 放在同一个文件夹中分发，程序不依赖源码目录或素材文件夹。
+
+程序需要 Microsoft Edge WebView2 Runtime（Windows 11 通常已自带）。如果系统提示缺少运行环境，请从 [微软 WebView2 页面](https://developer.microsoft.com/microsoft-edge/webview2/) 安装 Evergreen Runtime。
+
+启动动画可以点击或按键跳过，之后会进入**开始页面**，不会自动打开 Riverside Bay。
 
 你可以在首页选择：
 
@@ -280,6 +290,14 @@ npm run tauri:build
 ```
 
 Windows 可执行文件位于 `src-tauri/target/release/citygraph.exe`，安装包位于 `src-tauri/target/release/bundle/`。也可使用 `npm run tauri:build -- --no-bundle` 只生成可执行程序。
+
+生成主目录的便携版（推荐用于给玩家分发）：
+
+```powershell
+npm run package:portable
+```
+
+这条命令从已纳入 Git 的构建输入创建干净打包目录，排除个人 Logo、存档和本地附加素材，构建后自动复制为主目录的 **`CityGraph.exe`**。开发新功能时，请先将新的构建必需文件纳入版本控制，再制作便携版。普通玩家只需运行 exe，无须执行上述开发命令。
 
 个人校徽／企业 Logo 目录（`assets/university/Logo/`、`assets/enterprise/Logo/`、`assets/logo/`）由 Git 忽略，本地文件可以继续使用。面向他人发布程序时，请从干净的仓库检出目录构建，以仅打包仓库资源；本地素材目录中的图片可能被本机构建自动收集。
 

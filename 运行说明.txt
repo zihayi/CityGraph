@@ -1,0 +1,24 @@
+CityGraph Windows 便携版
+======================
+
+1. 双击本文件旁边的 CityGraph.exe，即可进入游戏。
+2. 在开始页面选择“新建地图”“继续最近存档”或“导入 OpenStreetMap”。
+3. 语言、背景音乐、音量、自动保存可以直接在开始页面调整。
+4. 详细玩法、快捷键、OSM 导入和存档说明请查看 README.md。
+
+普通玩家不需要安装 Node.js、npm 或 Rust。
+程序需要 Windows 的 Microsoft Edge WebView2 Runtime。Windows 11 通常已自带；
+如果系统提示缺少 WebView2，可从微软官网下载并安装 Evergreen Runtime：
+https://developer.microsoft.com/microsoft-edge/webview2/
+
+地图保存在程序目录的 save 文件夹，本地设置与恢复数据在 data 文件夹。
+建议把游戏放在自己有写入权限的目录，例如 D:\Games\CityGraph。
+备份或迁移游戏时，请同时复制 save 和 data；分享程序时只发送 CityGraph.exe、
+运行说明.txt 和 README.md，自己的存档与个人 Logo 由自己保管。
+
+制作新版便携程序（开发者）：
+安装 Node.js、Rust 和 Windows C++ 构建工具后，在项目目录执行：
+  npm install
+  npm run package:portable
+
+打包命令会把可分享的 CityGraph.exe 放在项目主目录，并排除本地个人 Logo。

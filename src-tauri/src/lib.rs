@@ -217,6 +217,10 @@ fn logo_bytes_match_extension(extension: &str, bytes: &[u8]) -> bool {
 
 fn store_logo_data_url_in(directory: &Path, data_url: &str) -> Result<String, String> {
     let (extension, bytes) = decode_logo_data_url(data_url)?;
+    store_logo_bytes_in(directory, extension, &bytes)
+}
+
+fn store_logo_bytes_in(directory: &Path, extension: &str, bytes: &[u8]) -> Result<String, String> {
     let hash = Sha256::digest(&bytes);
     let filename = format!("{hash:x}.{extension}");
     fs::create_dir_all(directory).map_err(|error| error.to_string())?;
@@ -228,26 +232,54 @@ fn store_logo_data_url_in(directory: &Path, data_url: &str) -> Result<String, St
 }
 
 fn migrate_logo_references(value: &mut serde_json::Value, directory: &Path) -> usize {
+    let root = program_root_dir().ok();
+    migrate_logo_references_at(value, directory, root.as_deref())
+}
+
+fn store_local_asset_logo(root: &Path, directory: &Path, reference: &str) -> Result<String, String> {
+    let asset = reference.strip_prefix("asset:").ok_or("Invalid asset reference")?;
+    let (folder, filename) = if let Some(filename) = asset.strip_prefix("university/") {
+        ("assets/university/Logo", filename)
+    } else if let Some(filename) = asset.strip_prefix("enterprise/") {
+        ("assets/enterprise/Logo", filename)
+    } else { ("assets/logo", asset) };
+    if filename.is_empty() || filename == "." || filename == ".." || filename.chars().any(|character| character.is_control() || matches!(character, '/' | '\\' | ':')) {
+        return Err("Invalid asset filename".into());
+    }
+    let base = root.join(folder).canonicalize().map_err(|error| error.to_string())?;
+    let path = base.join(filename).canonicalize().map_err(|error| error.to_string())?;
+    if !path.starts_with(&base) { return Err("Invalid asset path".into()); }
+    let metadata = fs::metadata(&path).map_err(|error| error.to_string())?;
+    if !metadata.is_file() || metadata.len() > MAX_CUSTOM_LOGO_BYTES as u64 { return Err("Logo is too large".into()); }
+    let extension = path.extension().and_then(|value| value.to_str()).unwrap_or("").to_ascii_lowercase();
+    let extension = if extension == "jpeg" { "jpg" } else { &extension };
+    let bytes = fs::read(&path).map_err(|error| error.to_string())?;
+    if bytes.len() > MAX_CUSTOM_LOGO_BYTES || !logo_bytes_match_extension(extension, &bytes) { return Err("Unsupported local logo".into()); }
+    store_logo_bytes_in(directory, extension, &bytes)
+}
+
+fn migrate_logo_references_at(value: &mut serde_json::Value, directory: &Path, root: Option<&Path>) -> usize {
     match value {
         serde_json::Value::Array(items) => items
             .iter_mut()
-            .map(|item| migrate_logo_references(item, directory))
+            .map(|item| migrate_logo_references_at(item, directory, root))
             .sum(),
         serde_json::Value::Object(fields) => {
             let mut migrated = 0;
             for (key, value) in fields {
                 if matches!(key.as_str(), "logo" | "emblemDataUrl" | "metroLogo") {
-                    let replacement = value
-                        .as_str()
-                        .filter(|item| item.starts_with("data:image/"))
-                        .and_then(|item| store_logo_data_url_in(directory, item).ok());
+                    let replacement = value.as_str().and_then(|item| {
+                        if item.starts_with("data:image/") { store_logo_data_url_in(directory, item).ok() }
+                        else if item.starts_with("asset:") { root.and_then(|root| store_local_asset_logo(root, directory, item).ok()) }
+                        else { None }
+                    });
                     if let Some(reference) = replacement {
                         *value = serde_json::Value::String(reference);
                         migrated += 1;
                         continue;
                     }
                 }
-                migrated += migrate_logo_references(value, directory);
+                migrated += migrate_logo_references_at(value, directory, root);
             }
             migrated
         }
@@ -260,7 +292,7 @@ fn migrate_logo_file(path: &Path, directory: &Path) -> Result<(), String> {
         return Ok(());
     }
     let content = fs::read_to_string(path).map_err(|error| error.to_string())?;
-    if !content.contains("data:image/") {
+    if !content.contains("data:image/") && !content.contains("asset:") {
         return Ok(());
     }
     let mut value = serde_json::from_str(&content).map_err(|error| error.to_string())?;
@@ -752,6 +784,23 @@ mod tests {
         assert!(first.starts_with("custom-logo:"));
         assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
         fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn restores_legacy_personal_logos_without_embedding_them_in_the_executable() {
+        let root = temporary_directory("local-asset-logo");
+        let originals = root.join("assets/university/Logo"); let directory = root.join("data/logos");
+        fs::create_dir_all(&originals).unwrap();
+        let bytes = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3];
+        fs::write(originals.join("school.png"), bytes).unwrap();
+        let mut value = serde_json::json!({ "logo": "asset:university/school.png", "thumbnail": "asset:university/school.png" });
+        assert_eq!(migrate_logo_references_at(&mut value, &directory, Some(&root)), 1);
+        assert!(value["logo"].as_str().unwrap().starts_with("custom-logo:"));
+        assert_eq!(value["thumbnail"], "asset:university/school.png");
+        assert_eq!(fs::read(originals.join("school.png")).unwrap(), bytes);
+        assert!(store_local_asset_logo(&root, &directory, "asset:university/../../private.png").is_err());
+        assert!(store_local_asset_logo(&root, &directory, "asset:university/C:\\private.png").is_err());
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

@@ -9,6 +9,7 @@ src-tauri/gen/schemas/
 release/
 save/
 data/
+.portable-build-*/
 
 # Personal university/company artwork belongs to local saves, not the repository.
 assets/enterprise/Logo/
