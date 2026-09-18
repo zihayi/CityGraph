@@ -10,7 +10,7 @@
 .osm-file-picker input { max-width: 100%; }
 .osm-file-picker small { color: #9bb7bc; overflow-wrap: anywhere; }
 .osm-import-help { color: #a4b7be; }
-.osm-import-body a, .osm-map-attribution a { color: #7edbd6; text-decoration: underline; text-underline-offset: 3px; }
+.osm-import-body a { color: #7edbd6; text-decoration: underline; text-underline-offset: 3px; }
 .osm-import-status { color: #7edbd6; }
 .osm-import-error { padding: 10px 12px; border: 1px solid #a55e64; border-radius: 8px; background: #472931; color: #ffd4d4; }
 .osm-layer-picker { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 12px; border: 1px solid #355561; border-radius: 9px; }
@@ -45,7 +45,6 @@
 .osm-import-dialog .dialog-actions button { padding: 0 13px; }
 .osm-import-dialog button:disabled { opacity: .45; cursor: not-allowed; }
 .osm-import-dialog :focus-visible { outline: 2px solid #64ded6; outline-offset: 3px; }
-.osm-map-attribution { position: absolute; z-index: 15; right: 16px; bottom: 6px; padding: 3px 7px; border-radius: 4px; background: rgb(7 24 33 / 85%); font-size: 10px; }
 .settings-import-button { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 12px; border: 1px solid #387875; border-radius: 10px; background: #153b43; color: #a7e4df; cursor: pointer; }
 .settings-import-button:hover { background: #1c5056; }
 @media (max-width: 600px) { .osm-layer-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

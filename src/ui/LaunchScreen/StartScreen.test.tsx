@@ -7,7 +7,7 @@ const props = { saves: [], loading: false, locale: "en-US" as const, musicEnable
 describe("StartScreen", () => {
   it("offers explicit new, import and sample actions with initial preferences", () => {
     const html = renderToStaticMarkup(<StartScreen {...props}/>);
-    expect(html).toContain("Your city starts here"); expect(html).toContain('aria-label="New Map"'); expect(html).toContain('aria-label="Import OpenStreetMap"'); expect(html).toContain('aria-label="Open Sample City"');
+    expect(html).toContain("Your city starts here"); expect(html).toContain('aria-label="New Map"'); expect(html).toContain('aria-label="Import Map"'); expect(html).toContain('aria-label="Open Sample City"');
     expect(html).toContain("No saves yet"); expect(html).toContain("Before you begin"); expect(html).not.toContain("Continue Latest Save");
   });
   it("shows the latest save and autosave indicators without opening a map", () => {

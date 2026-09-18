@@ -10,6 +10,7 @@ interface Props {
   selecting: boolean;
   disabled: boolean;
   label: string;
+  sourceLabel: string;
   onBounds: (bounds: OSMBounds) => void;
   onCenter: (point: GeoPoint) => void;
   onTileError: () => void;
@@ -54,7 +55,13 @@ export function OSMDownloadMap(props: Props) {
     void import("leaflet").then((L) => {
       if (disposed) return;
       const instance = L.map(element, { center: [30.246, 120.15], zoom: 15, minZoom: 3, maxZoom: 19, boxZoom: false, worldCopyJump: true }); map.current = instance;
-      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>' }).on("tileerror", () => latest.current.onTileError()).addTo(instance);
+      instance.attributionControl.setPrefix(false);
+      const sources = document.createElement("details"); sources.className = "osm-tile-source";
+      const summary = document.createElement("summary"); summary.textContent = latest.current.sourceLabel;
+      const content = document.createElement("div"); const link = document.createElement("a");
+      link.href = "https://www.openstreetmap.org/copyright"; link.target = "_blank"; link.rel = "noreferrer"; link.textContent = "© OpenStreetMap contributors";
+      content.append(link); sources.append(summary, content);
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: sources.outerHTML }).on("tileerror", () => latest.current.onTileError()).addTo(instance);
       rectangle.current = L.rectangle([[props.bounds.south, props.bounds.west], [props.bounds.north, props.bounds.east]], { color: "#0b958d", weight: 2, fillOpacity: 0.15, interactive: false }).addTo(instance);
       instance.on("moveend", () => { const center = instance.getCenter().wrap(); latest.current.onCenter({ latitude: Math.max(-85, Math.min(85, center.lat)), longitude: center.lng }); });
       applyBounds(latest.current.bounds); applyFocus(latest.current.focus); applyInteraction();

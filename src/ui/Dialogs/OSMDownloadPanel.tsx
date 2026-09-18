@@ -8,6 +8,7 @@ import { osmLayers, type OSMImportResult, type OSMLayers } from "../../serializa
 import type { OSMDownloadMessage, OSMWorkerResponse } from "../../serialization/OSMImport.worker";
 import { OSMDownloadMap, type OSMMapFocus } from "./OSMDownloadMap";
 import { OSMLayerPicker } from "./OSMLayerPicker";
+import { MapSourceDetails } from "../MapWorkspace/MapSourceDetails";
 import "./OSMDownloadPanel.css";
 
 interface Props { locale: Locale; layers: OSMLayers; onLayers: (layers: OSMLayers) => void; onReady: (result: OSMImportResult, name: string) => void; onBusy: (busy: boolean) => void; t: (key: TranslationKey) => string }
@@ -60,7 +61,7 @@ export function OSMDownloadPanel({ locale, layers, onLayers, onReady, onBusy, t 
     {places.length > 0 && <ul className="osm-place-results">{places.map((place) => <li key={place.id}><button type="button" disabled={busy} onClick={() => { goTo(place, place.bounds); setName(place.name); setPlaces([]); setSearched(false); }}><strong>{place.name}</strong><small>{place.displayName}</small></button></li>)}</ul>}
     {searched && places.length === 0 && <p className="osm-import-help">{t("osm.noResults")}</p>}
     <div className="osm-online-toolbar"><button type="button" disabled={busy} aria-pressed={!selecting} onClick={() => setSelecting(false)}><Hand size={15}/>{t("osm.pan")}</button><button type="button" disabled={busy} aria-pressed={selecting} onClick={() => setSelecting(true)}><SquareDashedMousePointer size={15}/>{t("osm.select")}</button><button type="button" disabled={busy} onClick={() => setBounds(osmBoundsAround(center))}>{t("osm.centerArea")}</button></div>
-    <OSMDownloadMap bounds={bounds} focus={focus} selecting={selecting} disabled={busy} label={t("osm.mapLabel")} onBounds={(value) => { setBounds(value); setSelecting(false); }} onCenter={setCenter} onTileError={() => setTileError(true)}/>
+    <OSMDownloadMap bounds={bounds} focus={focus} selecting={selecting} disabled={busy} label={t("osm.mapLabel")} sourceLabel={t("map.sourceDetails")} onBounds={(value) => { setBounds(value); setSelecting(false); }} onCenter={setCenter} onTileError={() => setTileError(true)}/>
     <p className="osm-import-help">{t("osm.mapHint")}</p>
     {tileError && <p className="osm-import-help">{t("osm.tileError")}</p>}
     <details className="osm-coordinate-fields"><summary>{t("osm.coordinates")}</summary><div>{(["south", "west", "north", "east"] as const).map((field) => <label key={field}>{t(`osm.bounds.${field}`)}<input key={bounds[field]} type="number" step="0.001" disabled={busy} defaultValue={bounds[field].toFixed(6)} onBlur={(event) => { const value = Number(event.currentTarget.value); if (!event.currentTarget.value.trim() || !Number.isFinite(value)) { event.currentTarget.value = String(bounds[field]); return; } setBounds((current) => ({ ...current, [field]: value })); }}/></label>)}</div></details>
@@ -72,6 +73,6 @@ export function OSMDownloadPanel({ locale, layers, onLayers, onReady, onBusy, t 
     {busy && <div className="osm-download-progress" role="status"><strong>{t(phase === "parse" ? "osm.parsing" : progress?.stage === "splitting" ? "osm.splitting" : "osm.downloading")}</strong>{progress && <span>{progress.completedTiles} / {progress.totalTiles} {t("osm.tiles")} · {(progress.bytes / 1024 / 1024).toFixed(2)} MB</span>}<progress max={progress?.totalTiles || 1} value={phase === "parse" ? progress?.totalTiles ?? 1 : progress?.completedTiles ?? 0}/></div>}
     {!hasLayers && <p className="osm-import-help">{t("osm.chooseContent")}</p>}
     <div className="osm-download-actions">{busy ? <button type="button" onClick={cancel}><X size={16}/>{t("osm.cancel")}</button> : <button type="button" className="primary" disabled={Boolean(invalid) || !desktop || searching || !hasLayers} onClick={() => void download()}><Download size={17}/>{t("osm.download")}</button>}</div>
-    <p className="osm-download-attribution">{t("osm.sources")}: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a> · <a href="https://photon.komoot.io/" target="_blank" rel="noreferrer">Photon / komoot</a></p>
+    <MapSourceDetails search t={t}/>
   </section>;
 }

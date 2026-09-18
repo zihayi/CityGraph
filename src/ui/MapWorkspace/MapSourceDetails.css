@@ -1,0 +1,11 @@
+.map-source-details { color: #accbc9; font-size: 10px; }
+.map-source-details > summary { cursor: pointer; user-select: none; }
+.map-source-content { margin-top: 7px; padding: 10px 12px; border: 1px solid #36575e; border-radius: 7px; background: #0c2833; color: #d5e8e7; line-height: 1.6; }
+.map-source-content p { margin: 0 0 5px; }
+.map-source-content a { color: #88d8d1; text-decoration: underline; }
+.map-source-details.osm-map-attribution { position: absolute; z-index: 15; right: 16px; bottom: 6px; padding: 4px 8px; border-radius: 4px; background: rgb(7 24 33 / 85%); }
+.osm-map-attribution > .map-source-content { position: absolute; right: 0; bottom: calc(100% + 6px); width: 245px; max-width: calc(100vw - 32px); box-shadow: 0 6px 20px #0004; }
+.map-source-details > summary:focus-visible { outline: 2px solid #6bdace; outline-offset: 3px; }
+.osm-tile-source { display: inline-block; position: relative; font-size: 10px; }
+.osm-tile-source summary { cursor: pointer; }
+.osm-tile-source > div { position: absolute; right: 0; bottom: calc(100% + 5px); width: 230px; padding: 9px 11px; border: 1px solid #b2c9c4; border-radius: 6px; background: #fff; color: #31544c; text-align: left; box-shadow: 0 3px 12px #0003; }
