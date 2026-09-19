@@ -133,6 +133,20 @@ button {
 
 .top-actions button.is-active { background: #0f5d65; color: #55e4df; }
 .top-measurement { position: relative; }
+.service-object-list { display: grid; gap: 6px; margin-top: 12px; }
+.service-object-list > strong { font-size: 11px; color: #aac3c8; }
+.service-object-list button { display: flex; align-items: center; gap: 8px; text-align: left; padding: 7px; border: 1px solid #49616a; border-radius: 6px; background: transparent; font-size: 12px; }
+.service-object-list i { width: 16px; height: 4px; flex-shrink: 0; }
+.service-waypoints > div { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+.service-route-properties > button { display: flex; align-items: center; gap: 6px; }
+.service-palette .palette-toggle { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.service-palette label.palette-field { display: flex; flex-direction: column; align-items: stretch; gap: 6px; color: #aac3c8; font-size: 11px; }
+.service-palette label.palette-field input { width: 100%; min-width: 0; }
+.service-route-properties { font-size: 12px; }
+.service-route-properties p { margin: 5px 0; font-size: 12px; }
+.service-route-properties > small { font-size: 11px; line-height: 1.6; color: #aac3c8; }
+.service-route-properties > button:not(.danger-action) { border: 1px solid #49616a; border-radius: 6px; padding: 8px; background: transparent; font-size: 11px; cursor: pointer; }
+.service-waypoints > strong { display: block; margin-bottom: 6px; color: #aac3c8; font-size: 11px; }
 .map-stage:has(.utility-tool-panel) .citygraph-canvas { cursor: crosshair; }
 .utility-tool-panel { position: absolute; z-index: 27; left: var(--left-dock-offset); top: 76px; width: min(310px, calc(100% - var(--left-dock-offset) - 20px)); padding: 14px; border-radius: 12px; color: #e7f3f4; }
 .utility-tool-panel p { font-size: 12px; color: #a9c4cb; line-height: 1.6; }

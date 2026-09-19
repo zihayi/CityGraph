@@ -20,6 +20,7 @@ import { MeasurementRenderer } from "../render/MeasurementRenderer";
 import { DistrictRenderer } from "../render/DistrictRenderer";
 import type { MeasurementMode } from "../app/store/editorStore";
 import { RailRenderer, type RailDraft } from "../render/RailRenderer";
+import { ServiceRouteRenderer, type ServiceRouteDraft } from "../render/ServiceRouteRenderer";
 import { CanvasBoundaryRenderer } from "../render/CanvasBoundaryRenderer";
 import type { CanvasResizeHandle } from "../geometry/CanvasBounds";
 import { RetainedRegionLayer, selectedEntityIds } from "../render/RetainedRegionLayer";
@@ -33,8 +34,9 @@ function roadSelectionKey(selection: EditorSelection): string {
   return JSON.stringify([[...new Set(edges)].sort(), [...new Set(nodes)].sort()]);
 }
 
-function transitSelectionKey(selection: EditorSelection): string {
-  return selection && (selection.kind.startsWith("rail-") || selection.kind.startsWith("bus-")) ? JSON.stringify(selection) : "";
+function transitSelectionKey(selection: EditorSelection, terminalIds: ReadonlySet<string>): string {
+  if (selection?.kind === "zone" && terminalIds.has(selection.id)) return JSON.stringify(selection);
+  return selection && (selection.kind.startsWith("rail-") || selection.kind.startsWith("bus-") || selection.kind === "service-route") ? JSON.stringify(selection) : "";
 }
 
 export class MapRenderer {
@@ -88,6 +90,8 @@ export class MapRenderer {
   private waterEditorKey = "";
   private poiSelectionKey = "[]";
   private transitKey = "";
+  private hasServiceTerminals = false;
+  private serviceTerminalIds = new Set<string>();
 
   public constructor(city: City, visibility: LayerVisibility, showTransitLines = false, transitSystem?: TransportSystem) {
     this.showTransitLines = showTransitLines; this.transitSystem = transitSystem;
@@ -107,7 +111,7 @@ export class MapRenderer {
     this.updateBuildingSelection(selection);
     const waterKey = selection?.kind === "water" ? selection.id : "";
     if (this.waterEditorKey !== waterKey) this.refreshWaterOverlay(selection);
-    if (this.transitKey !== transitSelectionKey(selection)) this.refreshTransit(selection);
+    if (this.transitKey !== transitSelectionKey(selection, this.serviceTerminalIds)) this.refreshTransit(selection);
     const poiKey = JSON.stringify([...selectedEntityIds(selection, "poi")].sort());
     if (this.poiSelectionKey !== poiKey) this.refreshPOIs(selection);
   }
@@ -129,7 +133,7 @@ export class MapRenderer {
     this.replaceLayer("roads", replacement); this.refreshRoadDecoration(selection, true);
   }
   public refreshTransit(selection: EditorSelection, zoom = this.transitCamera.zoom, rotation = this.transitCamera.rotation): void {
-    this.transitSelection = selection; this.transitKey = transitSelectionKey(selection); this.transitCamera = { zoom, rotation };
+    this.transitSelection = selection; this.transitKey = transitSelectionKey(selection, this.serviceTerminalIds); this.transitCamera = { zoom, rotation };
     this.replaceLayer("transit", new TransitRenderer().render(this.city, selection, this.transitCamera, this.showTransitLines, this.transitSystem));
   }
   public setTransitLoopPreview(path: BusPathStep[] = [], stops: Array<Omit<BusStop, "id" | "lineId">> = [], candidate?: Omit<BusStop, "id" | "lineId">, color = "#2d8cff", camera = this.transitCamera): void {
@@ -138,6 +142,7 @@ export class MapRenderer {
     this.transitOverlay.addChild(new BusRenderer().renderDraft(this.city, path, stops, candidate, color, camera));
   }
   public setRailPreview(draft?: RailDraft, camera = this.transitCamera): void { this.transitOverlay.removeChildren().forEach((child) => child.destroy({ children: true })); if (draft) this.transitOverlay.addChild(new RailRenderer().renderDraft(this.city, draft, camera)); }
+  public setServiceRoutePreview(draft?: ServiceRouteDraft, camera = this.transitCamera): void { this.transitOverlay.removeChildren().forEach((child) => child.destroy({ children: true })); if (draft) this.transitOverlay.addChild(new ServiceRouteRenderer().renderDraft(draft, camera)); }
   public setRoadPreview(preview?: { start: Point; end: Point; control?: Point; points?: Point[]; curveWaypoint?: Point; dashed?: boolean; solidPointCount?: number; width: number; valid: boolean }): void {
     this.editorOverlay.removeChildren().forEach((child) => child.destroy({ children: true }));
     if (preview) this.editorOverlay.addChild(new RoadRenderer().renderPreview(preview.start, preview.end, preview.control, preview.width, preview.valid, preview.points, preview.curveWaypoint, preview.dashed, preview.solidPointCount));
@@ -155,6 +160,8 @@ export class MapRenderer {
     const renderer = new ZoningRenderer(); const blocks = renderer.render({ ...this.city, zones: [] });
     this.zoneRegions = new RetainedRegionLayer(this.city.zones, selectedEntityIds(selection, "zone"), (zone, selected, _index, container) => { renderer.drawZone(zone, selected, this.zoneEditable, container); }, blocks);
     this.replaceLayer("zoning", this.zoneRegions.container);
+    const hadTerminals = this.hasServiceTerminals; this.serviceTerminalIds = new Set(this.city.zones.filter((zone) => zone.type === "airport" || zone.type === "ferry-terminal").map((zone) => zone.id)); this.hasServiceTerminals = this.serviceTerminalIds.size > 0;
+    if (this.layers.has("transit") && (hadTerminals || this.hasServiceTerminals || (this.city.serviceRoutes?.length ?? 0) > 0)) this.refreshTransit(selection);
   }
   public refreshParks(selection: EditorSelection): void {
     this.selection = selection; const renderer = new ParkRenderer();
@@ -191,7 +198,11 @@ export class MapRenderer {
     this.snapOverlay.removeChildren().forEach((child) => child.destroy({ children: true }));
     if (point) this.snapOverlay.addChild(new Graphics().circle(point.x, point.y, radius).fill({ color: 0x35d4d1, alpha: 0.16 }).stroke({ color: 0x12aeb0, width: Math.max(1, radius * 0.18), alpha: 0.95 }));
   }
-  public setMeasurementPreview(mode?: MeasurementMode, start?: Point, end?: Point, zoom = 1): void { this.measurementOverlay.removeChildren().forEach((child) => child.destroy({ children: true })); if (mode && start && end) this.measurementOverlay.addChild(new MeasurementRenderer().render(mode, start, end, zoom)); }
+  public setMeasurementPreview(mode?: MeasurementMode, start?: Point, end?: Point, zoom = 1): void {
+    if (!mode || !start || !end) { this.measurementOverlay.removeChildren().forEach((child) => child.destroy({ children: true })); return; }
+    const renderer = new MeasurementRenderer(); const preview = this.measurementOverlay.children[0] as Container | undefined;
+    if (preview) renderer.update(preview, mode, start, end, zoom); else this.measurementOverlay.addChild(renderer.render(mode, start, end, zoom));
+  }
   public setCanvasBoundaryPreview(bounds?: Bounds, zoom = 1, activeHandle?: CanvasResizeHandle): void { this.canvasBoundaryOverlay.removeChildren().forEach((child) => child.destroy({ children: true })); if (bounds) this.canvasBoundaryOverlay.addChild(new CanvasBoundaryRenderer().render(bounds, zoom, activeHandle)); }
   public setMarqueePreview(points: readonly Point[] = [], zoom = 1): void { this.marqueeOverlay.removeChildren().forEach((child) => child.destroy({ children: true })); if (points.length >= 3) this.marqueeOverlay.addChild(new Graphics().poly(points.flatMap((point) => [point.x, point.y]), true).fill({ color: 0x168cff, alpha: 0.1 }).stroke({ color: 0x168cff, alpha: 0.95, width: 1.5 / zoom })); }
 

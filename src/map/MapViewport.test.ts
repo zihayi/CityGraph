@@ -202,6 +202,25 @@ describe("MapViewport utility tools", () => {
   });
 });
 
+describe("MapViewport airport and ferry tools", () => {
+  it.each(["airplane", "ferry"] as const)("draws %s regions with the correct icon and ignores the generic road-fill mode", (system) => {
+    const { viewport, pointer, editor } = utilityFixture("measure"); const createZone = vi.fn().mockReturnValue("terminal"); Object.assign(editor, { createZone });
+    viewport.options.tool = "transit"; viewport.options.bus = { ...viewport.options.bus, system, service: { mode: "zone", name: "", color: "#337799", terminalName: "Terminal", terminalPrefix: "Terminal", routePrefix: "Route" } }; viewport.options.zone.mode = "road-fill";
+    for (const [x, y] of [[100, 100], [200, 100], [200, 200], [100, 200]]) viewport.handlePointerDown(pointer(x!, y!));
+    (viewport as unknown as { finishZone(): void }).finishZone();
+    expect(createZone).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ name: "Terminal", type: system === "airplane" ? "airport" : "ferry-terminal", icon: system === "airplane" ? "airport" : "ferry-terminal", source: "custom", polygon: [{ x: 50, y: 50 }, { x: 100, y: 50 }, { x: 100, y: 100 }, { x: 50, y: 100 }] }));
+  });
+  it.each(["airplane", "ferry"] as const)("connects two %s terminals with a waypoint and clears the completed preview", (system) => {
+    const { viewport, pointer, editor, city, renderer, onValidation } = utilityFixture("measure"); const createServiceRoute = vi.fn().mockReturnValue("route"); Object.assign(editor, { createServiceRoute, select: vi.fn() }); const preview = vi.fn(); Object.assign(renderer, { setServiceRoutePreview: preview });
+    const type = system === "airplane" ? "airport" : "ferry-terminal";
+    city.zones = [0, 1000].map((x, i) => ({ id: String(i), type, polygon: [{ x, y: 0 }, { x: x + 100, y: 0 }, { x: x + 100, y: 100 }, { x, y: 100 }], source: "custom", opacity: 0.4 }));
+    viewport.options.tool = "transit"; viewport.options.bus = { ...viewport.options.bus, system, service: { mode: "line", name: "Test route", color: "#337799", terminalName: "", terminalPrefix: "Terminal", routePrefix: "Route" } };
+    viewport.handlePointerDown(pointer(600, 600)); expect(onValidation).toHaveBeenLastCalledWith("service.pickStart");
+    viewport.handlePointerDown(pointer(100, 100)); viewport.handlePointerDown(pointer(1000, 400)); viewport.handlePointerDown(pointer(2100, 100));
+    expect(createServiceRoute).toHaveBeenCalledExactlyOnceWith({ system, name: "Test route", color: "#337799", startZoneId: "0", endZoneId: "1", waypoints: [{ x: 500, y: 200 }] }); expect(preview).toHaveBeenLastCalledWith(); expect(viewport.pointerId).toBeNull();
+  });
+});
+
 describe("MapViewport building generation", () => {
   it("restores a queued camera after asynchronous viewport initialization", async () => {
     const { viewport, camera } = fixture(); const state = { x: 42, y: 75, zoom: 3, rotation: 0.5 };

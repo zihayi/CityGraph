@@ -1,4 +1,5 @@
 import type { CameraState } from "../map/MapViewport";
+import { isServiceRoute } from "../geometry/ServiceRouteGeometry";
 import { createEmptyCompany, createEmptyCompanyProfile, createEmptyHospital, createEmptyUniversity, defaultEconomySettings, defaultLandscapingColor, defaultLandscapingOpacity, economyCurrencies, economyMonetaryUnits, facilityDefaultColor, type AlumniCompany, type BusLine, type BusPathStep, type BusStop, type BusTerminal, type City, type Company, type CompanyProfile, type District, type EconomySettings, type FacilityPOI, type Hospital, type MapSize, type Park, type RailLine, type RailNode, type RailPathStep, type RailStation, type RailSystem, type RailTrack, type Road, type RoadCategory, type RoadEdge, type RoadNode, type RoadStructure, type RoadSubtype, type TerrainType, type University, type UniversityType, type WaterArea, type Zone } from "../model/City";
 import { deriveCompanyMarketValueRanks } from "../model/CityInformation";
 import { normalizeHospitalCampuses } from "../model/Hospital";
@@ -12,7 +13,7 @@ import { join } from "@tauri-apps/api/path";
 import { isCustomLogoReference } from "../services/LogoStorage";
 import { defaultAIConfig, entityRelationTypes, newsCategories, type AIConfig, type CityAISnapshot, type CityEvent, type DailyNewsIssue, type EntityRelation, type NewsArticle } from "../model/AI";
 
-const FORMAT_VERSION = 14;
+const FORMAT_VERSION = 15;
 const RAIL_FORMAT_VERSION = 13;
 const RAIL_SYSTEM_FORMAT_VERSION = 14;
 const SHARED_ENTITY_FORMAT_VERSION = 12;
@@ -51,6 +52,7 @@ interface MapDocument {
   railTracks: RailTrack[];
   railStations: RailStation[];
   railLines: RailLine[];
+  serviceRoutes: NonNullable<City["serviceRoutes"]>;
   metroLogo: string;
   busTerminals: BusTerminal[];
   busLines: BusLine[];
@@ -125,7 +127,7 @@ type SavedCompany = Omit<Company, "description"> & { description?: string };
 function isCompanyProfile(value: unknown): value is SavedCompanyProfile { return isRecord(value) && isImageReference(value.logo) && (value.description === undefined || typeof value.description === "string") && (value.isHeadquarters === undefined || typeof value.isHeadquarters === "boolean") && (value.marketValue === null || typeof value.marketValue === "number" && Number.isFinite(value.marketValue) && value.marketValue >= 0) && (value.marketValueRank === null || typeof value.marketValueRank === "number" && Number.isInteger(value.marketValueRank) && value.marketValueRank > 0) && (value.alumniUniversityId === undefined || typeof value.alumniUniversityId === "string") && Array.isArray(value.tags) && value.tags.every((tag) => typeof tag === "string" && Boolean(tag.trim())); }
 function isCompany(value: unknown): value is SavedCompany { return isRecord(value) && typeof value.id === "string" && typeof value.name === "string" && isImageReference(value.logo) && (value.description === undefined || typeof value.description === "string") && (value.marketValue === null || typeof value.marketValue === "number" && Number.isFinite(value.marketValue) && value.marketValue >= 0) && (value.marketValueRank === null || typeof value.marketValueRank === "number" && Number.isInteger(value.marketValueRank) && value.marketValueRank > 0) && (value.alumniUniversityId === undefined || typeof value.alumniUniversityId === "string") && Array.isArray(value.tags) && value.tags.every((tag) => typeof tag === "string" && Boolean(tag.trim())); }
 function isZone(value: unknown): value is Zone { return isRecord(value) && typeof value.id === "string" && (value.name === undefined || typeof value.name === "string") && (value.description === undefined || typeof value.description === "string") && (value.purpose === undefined || value.purpose === "university") && (value.university === undefined || isUniversityProfile(value.university)) && (value.universityId === undefined || typeof value.universityId === "string") && (value.campusRole === undefined || value.campusRole === "main" || value.campusRole === "branch") && (value.address === undefined || typeof value.address === "string") && (value.areaOverride === undefined || typeof value.areaOverride === "number" && Number.isFinite(value.areaOverride) && value.areaOverride > 0) && (value.educationLevel === undefined || ["kindergarten", "primary", "middle", "high", "vocational", "college", "university", "special", "other"].includes(String(value.educationLevel))) && (value.affiliatedUniversityId === undefined || typeof value.affiliatedUniversityId === "string") && (value.hospitalId === undefined || typeof value.hospitalId === "string") && (value.hospitalCampusRole === undefined || value.hospitalCampusRole === "main" || value.hospitalCampusRole === "branch") && (value.hospital === undefined || value.type === "medical" && isHospitalProfile(value.hospital)) && ["residential", "commercial", "education", "medical", "government", "industrial", "office", "green", "high-speed-rail-station", "mixed", "custom", "public"].includes(String(value.type)) && Array.isArray(value.polygon) && value.polygon.length >= 3 && value.polygon.every(isPoint) && ["custom", "road-fill"].includes(String(value.source)) && typeof value.opacity === "number" && Number.isFinite(value.opacity) && (value.color === undefined || typeof value.color === "string") && (value.icon === undefined || typeof value.icon === "string") && (value.iconColor === undefined || typeof value.iconColor === "string") && (value.iconOpacity === undefined || typeof value.iconOpacity === "number" && Number.isFinite(value.iconOpacity)); }
-function isSavedZone(value: unknown): value is Zone { return isZone(value) || isRecord(value) && ["tourism", "zoo", "amusement-park", "golf-course", "resort", "train-station", "airport"].includes(String(value.type)) && isZone({ ...value, type: "green" }); }
+function isSavedZone(value: unknown): value is Zone { return isZone(value) || isRecord(value) && ["tourism", "zoo", "amusement-park", "golf-course", "resort", "train-station", "airport", "ferry-terminal"].includes(String(value.type)) && isZone({ ...value, type: "green" }); }
 function migrateLegacyUniversities(legacyZones: Zone[]): { universities: University[]; zones: Zone[] } {
   const universities: University[] = [];
   const zones = legacyZones.map((zone) => {
@@ -314,7 +316,7 @@ export class SaveManager {
     const now = new Date().toISOString(); const zones = normalizeHospitalCampuses(city.hospitals, city.zones); const companies = deriveCompanyMarketValueRanks(city.companies); const facilities = normalizeCompanyLocations(companies, city.facilities);
     return {
       metadata: { formatVersion: FORMAT_VERSION, gameVersion: GAME_VERSION, saveName, mapName: city.name, cityId: city.id, createdAt: createdAt ?? now, updatedAt: now, autosave, thumbnail },
-      map: { mapSize: city.mapSize, mapSource: city.mapSource, osmAttribution: city.osmAttribution, worldBounds: city.bounds, terrain: city.terrain, economy: { ...(city.economy ?? defaultEconomySettings) }, water: city.waters, camera, blocks: city.blocks, parks: city.parks, districts: city.districts, pois: city.pois, transitLines: city.transitLines, transitStations: city.transitStations, railNodes: city.railNodes ?? [], railTracks: city.railTracks ?? [], railStations: city.railStations ?? [], railLines: city.railLines ?? [], metroLogo: city.metroLogo ?? "", busTerminals: city.busTerminals, busLines: city.busLines, busStops: city.busStops, labels: city.labels },
+      map: { mapSize: city.mapSize, mapSource: city.mapSource, osmAttribution: city.osmAttribution, worldBounds: city.bounds, terrain: city.terrain, economy: { ...(city.economy ?? defaultEconomySettings) }, water: city.waters, camera, blocks: city.blocks, parks: city.parks, districts: city.districts, pois: city.pois, transitLines: city.transitLines, transitStations: city.transitStations, railNodes: city.railNodes ?? [], railTracks: city.railTracks ?? [], railStations: city.railStations ?? [], railLines: city.railLines ?? [], serviceRoutes: city.serviceRoutes ?? [], metroLogo: city.metroLogo ?? "", busTerminals: city.busTerminals, busLines: city.busLines, busStops: city.busStops, labels: city.labels },
       roads: { roadNodes: city.roadNodes, roads: city.roads, roadEdges: city.roadEdges },
       zones: { universities: city.universities, hospitals: city.hospitals, zones },
       buildings: { buildings: city.buildings },
@@ -421,6 +423,8 @@ export class SaveManager {
     const savedDistricts = Array.isArray(mapValue.districts) ? mapValue.districts : []; if (!savedDistricts.every(isDistrict) || new Set(savedDistricts.map((district) => district.id)).size !== savedDistricts.length) throw new SaveError("invalid"); const districts = savedDistricts as District[]; if (districts.some((district) => !isValidDistrictPolygon(district.points, districts, district.id))) throw new SaveError("invalid");
     const economy = mapValue.economy === undefined ? { ...defaultEconomySettings } : isEconomySettings(mapValue.economy) ? { ...mapValue.economy } : undefined; if (!economy) throw new SaveError("invalid");
     const ai = parseAIDocument(aiValue);
+    const serviceRoutes = version < 15 && mapValue.serviceRoutes === undefined ? [] : mapValue.serviceRoutes;
+    if (!Array.isArray(serviceRoutes) || !serviceRoutes.every((route) => isServiceRoute(route, { zones })) || !hasUniqueStringIds(serviceRoutes)) throw new SaveError("invalid");
     const mapSource = mapValue.mapSource;
     if (mapValue.osmAttribution !== undefined && typeof mapValue.osmAttribution !== "boolean") throw new SaveError("invalid");
     if (mapSource !== undefined && (!isRecord(mapSource) || mapSource.type !== "osm" || typeof mapSource.latitude !== "number" || !Number.isFinite(mapSource.latitude) || Math.abs(mapSource.latitude) > 90 || typeof mapSource.longitude !== "number" || !Number.isFinite(mapSource.longitude) || Math.abs(mapSource.longitude) > 180)) throw new SaveError("invalid");
@@ -445,6 +449,7 @@ export class SaveManager {
       railTracks: railTracks as RailTrack[],
       railStations: railStations as RailStation[],
       railLines: railLines as RailLine[],
+      serviceRoutes,
       metroLogo,
       busTerminals: busTerminals as BusTerminal[],
       busLines: busLines as BusLine[],

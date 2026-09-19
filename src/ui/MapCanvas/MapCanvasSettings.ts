@@ -21,7 +21,8 @@ export function syncViewportSettings(viewport: MapViewport, settings: MapCanvasS
   update("university", (value) => viewport.setUniversitySettings(value));
   // Rail settings are nested; fresh but equal objects must not restart draft calculations.
   const railChanged = !previous || !shallow(previous.bus.rail, settings.bus.rail);
-  if (railChanged || !previous || !shallow({ ...previous.bus, rail: undefined }, { ...settings.bus, rail: undefined })) {
+  const serviceChanged = !previous || !shallow(previous.bus.service, settings.bus.service);
+  if (railChanged || serviceChanged || !previous || !shallow({ ...previous.bus, rail: undefined, service: undefined }, { ...settings.bus, rail: undefined, service: undefined })) {
     viewport.setBusSettings(settings.bus); changed = true;
   }
   if (railChanged && settings.bus.rail) viewport.setRailSettings(settings.bus.rail);

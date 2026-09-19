@@ -204,7 +204,8 @@ export function App() {
   const block = { rows: store.blockRows, columns: store.blockColumns, roadSubtype: store.blockRoadSubtype } as const;
   const university = { mode: store.universityMode } as const;
   const rail = { mode: store.railMode, trackShape: store.railTrackShape, structure: store.railStructure, lineName: store.railLineName, lineColor: store.railLineColor, lineLoop: store.railLineLoop, trainStationNamePrefix: t("rail.stationNamePrefix"), trainLineNamePrefix: t("rail.lineNamePrefix"), metroStationNamePrefix: t("metro.stationNamePrefix"), metroLineNamePrefix: t("metro.lineNamePrefix") } as const;
-  const bus = { system: store.transportSystem, mode: store.transitMode, lineColor: store.transitLineColor, rail } as const;
+  const service = { mode: store.serviceRouteMode, name: store.serviceRouteName, color: store.serviceRouteColor, terminalName: store.serviceTerminalName, terminalPrefix: t(store.transportSystem === "ferry" ? "service.ferryTerminal" : "service.airport"), routePrefix: t(store.transportSystem === "ferry" ? "service.ferryRoute" : "service.flight") } as const;
+  const bus = { system: store.transportSystem, mode: store.transitMode, lineColor: store.transitLineColor, rail, service } as const;
   const measurement = { mode: store.measurementMode } as const;
   const city = editor.state.city;
   const visibleLayers = { ...store.layers, districts: store.currentTool === "districts" || store.districtPinned || informationOpen && informationSelected?.kind === "district" };

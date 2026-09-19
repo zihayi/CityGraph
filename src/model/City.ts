@@ -38,11 +38,22 @@ export type ZoneType =
   | "high-speed-rail-station"
   | "train-station"
   | "airport"
+  | "ferry-terminal"
   | "mixed"
   | "custom"
   | "public";
 export type TransitType = "metro" | "train" | "bus";
 export type RailSystem = "train" | "metro";
+export type ServiceRouteSystem = "airplane" | "ferry";
+export interface ServiceRoute {
+  id: string;
+  system: ServiceRouteSystem;
+  name: string;
+  color: string;
+  startZoneId: string;
+  endZoneId: string;
+  waypoints: Point[];
+}
 export type LabelType = "city" | "district" | "road" | "poi" | "custom";
 export interface OSMFeatureSource { type: "node" | "way" | "relation"; id: string; tags: Record<string, string> }
 
@@ -474,6 +485,7 @@ export interface City {
   railTracks?: RailTrack[];
   railStations?: RailStation[];
   railLines?: RailLine[];
+  serviceRoutes?: ServiceRoute[];
   metroLogo?: string;
   busTerminals: BusTerminal[];
   busLines: BusLine[];

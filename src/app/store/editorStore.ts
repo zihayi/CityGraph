@@ -52,6 +52,7 @@ export type TransitMode = "create" | "edit";
 export type TransportSystem = "bus" | "train" | "metro" | "airplane" | "ferry";
 export type RailMode = "track" | "station" | "line" | "edit";
 export type RailTrackShape = "straight" | "curve";
+export type ServiceRouteMode = "zone" | "line" | "edit";
 export type MeasurementMode = "distance" | "area";
 export type UniversityAffiliationKind = "school" | "hospital" | "facility" | "alumni-company";
 export interface UniversityAffiliationPick { universityId: string; campusId: string; kind: UniversityAffiliationKind }
@@ -153,6 +154,10 @@ export interface EditorUiState {
   railLineName: string;
   railLineColor: string;
   railLineLoop: boolean;
+  serviceRouteMode: ServiceRouteMode;
+  serviceRouteName: string;
+  serviceRouteColor: string;
+  serviceTerminalName: string;
   measurementMode: MeasurementMode;
   shortcuts: KeyboardShortcuts;
   uiOpacity: number;
@@ -230,6 +235,10 @@ export interface EditorUiState {
   setRailLineName: (name: string) => void;
   setRailLineColor: (color: string) => void;
   setRailLineLoop: (loop: boolean) => void;
+  setServiceRouteMode: (mode: ServiceRouteMode) => void;
+  setServiceRouteName: (name: string) => void;
+  setServiceRouteColor: (color: string) => void;
+  setServiceTerminalName: (name: string) => void;
   setMeasurementMode: (mode: MeasurementMode) => void;
   setShortcut: (action: ShortcutAction, key: string) => void;
   resetShortcuts: () => void;
@@ -327,6 +336,10 @@ export const useEditorStore = create<EditorUiState>((set) => ({
   railLineColor: /^#[0-9a-f]{6}$/i.test(localStorage.getItem("citygraph:rail-line-color") ?? "") ? localStorage.getItem("citygraph:rail-line-color")! : "#d9485f",
   railLineLoop: localStorage.getItem("citygraph:rail-line-loop") === "true",
   measurementMode: "distance",
+  serviceRouteMode: "zone",
+  serviceRouteName: "",
+  serviceRouteColor: "#367f95",
+  serviceTerminalName: "",
   shortcuts: savedShortcuts,
   uiOpacity: Math.max(0.35, Math.min(1, Number(localStorage.getItem("citygraph:ui-opacity")) || 0.82)),
   musicEnabled: localStorage.getItem("citygraph:music-enabled") !== "false",
@@ -423,6 +436,10 @@ export const useEditorStore = create<EditorUiState>((set) => ({
   setRailLineColor: (railLineColor) => { if (/^#[0-9a-f]{6}$/i.test(railLineColor)) { persistBrowserSetting("citygraph:rail-line-color", railLineColor); set({ railLineColor }); } },
   setRailLineLoop: (railLineLoop) => { persistBrowserSetting("citygraph:rail-line-loop", String(railLineLoop)); set({ railLineLoop }); },
   setMeasurementMode: (measurementMode) => set({ measurementMode }),
+  setServiceRouteMode: (serviceRouteMode) => set({ serviceRouteMode }),
+  setServiceRouteName: (serviceRouteName) => set({ serviceRouteName }),
+  setServiceRouteColor: (serviceRouteColor) => { if (/^#[0-9a-f]{6}$/i.test(serviceRouteColor)) set({ serviceRouteColor }); },
+  setServiceTerminalName: (serviceTerminalName) => set({ serviceTerminalName }),
   setShortcut: (action, key) => set((state) => {
     const normalized = key.toLowerCase(); const shortcuts = { ...state.shortcuts }; const duplicate = (Object.keys(shortcuts) as ShortcutAction[]).find((candidate) => candidate !== action && shortcuts[candidate] === normalized);
     if (duplicate) shortcuts[duplicate] = shortcuts[action]; shortcuts[action] = normalized;

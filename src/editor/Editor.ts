@@ -15,6 +15,9 @@ import { CampusStateSnapshotCommand, UpdateUniversityCommand, UpdateUniversityRa
 import { HospitalStateSnapshotCommand, type HospitalStateSnapshot } from "../commands/HospitalCommands";
 import { CompanyStateSnapshotCommand, type CompanyStateSnapshot } from "../commands/CompanyCommands";
 import { RailSnapshotCommand, type RailSnapshot } from "../commands/RailCommands";
+import { ServiceRouteSnapshotCommand } from "../commands/ServiceRouteCommands";
+import { isServiceRoute } from "../geometry/ServiceRouteGeometry";
+import type { ServiceRoute } from "../model/City";
 import type { Bounds, Point } from "../geometry/Point";
 import { distance, pathIntersectsPolygon, pointToSegmentDistance, roadDistance } from "../geometry/RoadGeometry";
 import { busStopsShareStation, isBusRoadEdge, locatePointOnRoad, pointAtRoadFraction, routeBetweenBusStops } from "../geometry/BusGeometry";
@@ -34,8 +37,8 @@ import { roadIdentityGroupEdges, selectedRoadEdge, selectedRoadEdges, type RoadS
 import { EditorState } from "./EditorState";
 import { normalizeSpatialItems, spatialItemKey, type SpatialSelectionItem } from "./SpatialSelection";
 
-export type EditorSelection = { kind: "road"; id: string; edgeId?: string; scope?: RoadSelectionScope } | { kind: "road-multi"; edgeIds: string[]; nodeIds: string[] } | { kind: "road-control"; id: string; pointIndex: number } | { kind: "node"; id: string } | { kind: "zone"; id: string } | { kind: "park"; id: string } | { kind: "district"; id: string } | { kind: "water"; id: string } | { kind: "building"; id: string } | { kind: "building-multi"; ids: string[] } | { kind: "facility"; id: string } | { kind: "spatial-group"; items: SpatialSelectionItem[] } | { kind: "university"; id: string } | { kind: "hospital"; id: string } | { kind: "company"; id: string } | { kind: "rail-node"; id: string } | { kind: "rail-track"; id: string } | { kind: "rail-station"; id: string } | { kind: "rail-line"; id: string } | { kind: "bus-terminal"; id: string } | { kind: "bus-line"; id: string } | { kind: "bus-stop"; id: string } | null;
-export type EditorChange = "city" | "city-name" | "map-size" | "economy" | "metro-logo" | "roads" | "blocks" | "zones" | "parks" | "districts" | "universities" | "waters" | "buildings" | "facilities" | "pois" | "railways" | "buses" | "selection" | "history";
+export type EditorSelection = { kind: "service-route"; id: string } | { kind: "road"; id: string; edgeId?: string; scope?: RoadSelectionScope } | { kind: "road-multi"; edgeIds: string[]; nodeIds: string[] } | { kind: "road-control"; id: string; pointIndex: number } | { kind: "node"; id: string } | { kind: "zone"; id: string } | { kind: "park"; id: string } | { kind: "district"; id: string } | { kind: "water"; id: string } | { kind: "building"; id: string } | { kind: "building-multi"; ids: string[] } | { kind: "facility"; id: string } | { kind: "spatial-group"; items: SpatialSelectionItem[] } | { kind: "university"; id: string } | { kind: "hospital"; id: string } | { kind: "company"; id: string } | { kind: "rail-node"; id: string } | { kind: "rail-track"; id: string } | { kind: "rail-station"; id: string } | { kind: "rail-line"; id: string } | { kind: "bus-terminal"; id: string } | { kind: "bus-line"; id: string } | { kind: "bus-stop"; id: string } | null;
+export type EditorChange = "city" | "city-name" | "map-size" | "economy" | "metro-logo" | "roads" | "blocks" | "zones" | "parks" | "districts" | "universities" | "waters" | "buildings" | "facilities" | "pois" | "railways" | "service-routes" | "buses" | "selection" | "history";
 export type RailStationPlacement = { nodeId: string } | { trackId: string; point: Point };
 export interface RailLinePoint extends Point { stationId?: string }
 export type MetroLinePoint = RailLinePoint;
@@ -114,9 +117,9 @@ export class Editor {
   private spatialClipboard?: SpatialClipboard;
   private spatialPasteCount = 0;
 
-  public constructor(city: City) { this.initializeCollections(city); this.state = new EditorState(city); }
+  public constructor(city: City) { city.serviceRoutes ??= []; this.initializeCollections(city); this.state = new EditorState(city); }
   public subscribe(listener: (change: EditorChange) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener); }
-  public replaceCity(city: City): void { this.initializeCollections(city); this.state.replaceCity(city); this.selection = null; this.spatialClipboard = undefined; this.spatialPasteCount = 0; this.commands.clear(); this.emit("city"); this.emit("selection"); }
+  public replaceCity(city: City): void { city.serviceRoutes ??= []; this.initializeCollections(city); this.state.replaceCity(city); this.selection = null; this.spatialClipboard = undefined; this.spatialPasteCount = 0; this.commands.clear(); this.emit("city"); this.emit("selection"); }
   public importMapRegion(source: City, center: Point): Bounds | undefined {
     if (!importedCollections.some((key) => source[key].length)) return undefined;
     const command = new MapImportCommand(this.state.city, source, center, () => { this.selection = null; this.emit("map-size"); this.emit("selection"); });
@@ -305,6 +308,7 @@ export class Editor {
 
   public deleteSelected(): void {
     const selection = this.selection; if (!selection) return;
+    if (selection.kind === "service-route") { const city = this.state.city; const before = city.serviceRoutes ?? []; const after = before.filter((route) => route.id !== selection.id); if (after.length === before.length) return; this.commands.execute(new ServiceRouteSnapshotCommand("Delete service route", city, before, after, () => this.emit("service-routes"))); this.select(null); this.emit("history"); return; }
     if (selection.kind === "spatial-group") { this.deleteSpatialSelection(); return; }
     if (selection.kind === "road-control" || selection.kind === "road-multi") return;
     if (selection.kind === "bus-terminal") {
@@ -350,6 +354,20 @@ export class Editor {
   public createZone(input: Omit<Zone, "id">): string | undefined {
     if (input.polygon.length < 3) return undefined; const city = this.state.city; const id = `zone-${crypto.randomUUID()}`; const before = structuredClone(city.zones); const after = [...before, { ...structuredClone(input), id, opacity: Math.max(0.05, Math.min(1, input.opacity)) }];
     this.commands.execute(new ZoneSnapshotCommand("Create zone", city, before, after, () => this.emit("zones"))); this.select({ kind: "zone", id }); this.emit("history"); return id;
+  }
+
+  public createServiceRoute(input: Omit<ServiceRoute, "id">): string | undefined {
+    const city = this.state.city; const route = { ...structuredClone(input), name: input.name.trim(), id: `service-route-${crypto.randomUUID()}` };
+    if (!isServiceRoute(route, city)) return undefined;
+    const before = structuredClone(city.serviceRoutes ?? []);
+    this.commands.execute(new ServiceRouteSnapshotCommand("Create service route", city, before, [...before, route], () => this.emit("service-routes"))); this.select({ kind: "service-route", id: route.id }); this.emit("history"); return route.id;
+  }
+  public updateServiceRoute(id: string, changes: Partial<Omit<ServiceRoute, "id" | "system">>): boolean {
+    const city = this.state.city; const before = structuredClone(city.serviceRoutes ?? []); const current = before.find((route) => route.id === id); if (!current) return false;
+    const route = { ...current, ...structuredClone(changes), name: changes.name === undefined ? current.name : changes.name.trim() };
+    if (!isServiceRoute(route, city)) return false;
+    if (JSON.stringify(route) === JSON.stringify(current)) return true;
+    this.commands.execute(new ServiceRouteSnapshotCommand("Update service route", city, before, before.map((value) => value.id === id ? route : value), () => this.emit("service-routes"))); this.emit("history"); return true;
   }
 
   public createUniversity(): string {

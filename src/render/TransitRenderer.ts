@@ -4,6 +4,7 @@ import type { EditorSelection } from "../editor/Editor";
 import type { City, RailSystem, TransitStation } from "../model/City";
 import { BusRenderer } from "./BusRenderer";
 import { RailRenderer } from "./RailRenderer";
+import { ServiceRouteRenderer } from "./ServiceRouteRenderer";
 
 export class TransitRenderer {
   public render(city: City, selection: EditorSelection = null, camera = { zoom: 1, rotation: 0 }, showLines = false, transportSystem?: TransportSystem): Container {
@@ -46,6 +47,7 @@ export class TransitRenderer {
     if (city.busLines?.length || city.busTerminals?.length || city.busStops?.length) container.addChild(new BusRenderer().render(city, selection, camera, showLines && transportSystem === "bus"));
     const railSystem: RailSystem = transportSystem === "metro" ? "metro" : "train";
     container.addChild(new RailRenderer().render(city, selection, camera, showLines && (transportSystem === "train" || transportSystem === "metro"), railSystem));
+    container.addChild(new ServiceRouteRenderer().render(city, selection, camera, showLines && (transportSystem === "airplane" || transportSystem === "ferry") ? transportSystem : undefined));
 
     return container;
   }

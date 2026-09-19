@@ -2,6 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import { useEditorStore, type EditorUiState } from "../app/store/editorStore";
 
 const settingKeys = [
+  "serviceRouteMode", "serviceRouteName", "serviceRouteColor", "serviceTerminalName",
   "layers", "facilityColors", "zoneColors", "locale", "roadMode", "roadShape", "roadSubtype", "roadWidth", "roadStructure", "roadAllowWaterCrossing", "roadAlign", "roadAngleEnabled", "roadAngle", "roadGridSnap", "roadGridSize", "roadPolygonSides", "roadParallelOffset", "zoneMode", "zoneType", "zoneColor", "zoneIcon", "zoneIconColor", "zoneIconOpacity", "zoningOpacity", "landscapingMode", "landscapingColor", "landscapingOpacity", "districtMode", "districtPinned", "buildingMode", "buildingPreset", "buildingType", "buildingSubtype", "buildingStyle", "buildingFloors", "buildingHeight", "buildingWidth", "buildingDepth", "buildingMinSideLength", "buildingMaxSideLength", "buildingDensity", "buildingSnapToRoad", "buildingSetback", "buildingMinSpacing", "buildingMaxSpacing", "buildingExtrude", "buildingEdgeStyle", "waterMode", "waterEdgeStyle", "waterRiverWidth", "blockRows", "blockColumns", "blockRoadSubtype", "transitMode", "transportSystem", "transitLineColor", "railMode", "railTrackShape", "railStructure", "railLineColor", "railLineLoop", "measurementMode", "shortcuts", "uiOpacity", "musicEnabled", "musicVolume", "autoSaveEnabled", "autoSaveIntervalMinutes", "autoSaveSlots", "deepSeekApiKey", "deepSeekModel", "toolbarCollapsed",
 ] as const satisfies readonly (keyof EditorUiState)[];
 

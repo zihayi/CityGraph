@@ -29,6 +29,10 @@ import { spatialItemAtPoint, spatialItemKey, spatialItemsInPolygon, type Spatial
 import type { SpatialEntityState } from "../commands/SpatialCommands";
 import type { RoadEdge, RoadNode } from "../model/City";
 import type { EyedropperSample } from "../app/store/eyedropper";
+import type { ServiceRouteMode } from "../app/store/editorStore";
+import type { ServiceRouteSystem } from "../model/City";
+import { sampleServiceRoute, serviceRouteDistance, serviceRoutePoints, terminalAnchors, terminalZoneType } from "../geometry/ServiceRouteGeometry";
+import { defaultZoneColors, defaultZoneIconColors, defaultZoneIcons } from "../model/ZoneStyle";
 
 export interface CameraState { x: number; y: number; zoom: number; rotation: number }
 export interface RoadContextMenu { x: number; y: number; edgeId: string; point: Point; nodeId?: string; canAdd: boolean; canDelete: boolean }
@@ -43,11 +47,12 @@ export interface WaterToolSettings { mode: "free" | "rectangle" | "river" | "isl
 export interface BlockToolSettings { rows: number; columns: number; roadSubtype: BlockRoadSubtype }
 export interface UniversityToolSettings { mode: "browse" | "zone" | "edit" | "facility"; universityId?: string; createUniversity?: boolean }
 export interface RailToolSettings { mode: RailMode; trackShape?: RailTrackShape; structure: RoadStructure; lineName?: string; lineColor: string; lineLoop: boolean; trainStationNamePrefix?: string; trainLineNamePrefix?: string; metroStationNamePrefix?: string; metroLineNamePrefix?: string }
-export interface BusToolSettings { system?: TransportSystem; mode: TransitMode; lineColor: string; rail?: RailToolSettings }
+export interface ServiceRouteToolSettings { mode: ServiceRouteMode; name: string; color: string; terminalName: string; terminalPrefix: string; routePrefix: string }
+export interface BusToolSettings { system?: TransportSystem; mode: TransitMode; lineColor: string; rail?: RailToolSettings; service?: ServiceRouteToolSettings }
 export interface MeasurementToolSettings { mode: MeasurementMode }
 export interface ParkContextMenu { x: number; y: number; parkId: string; point: Point; segmentIndex?: number; vertexIndex?: number; canAdd: boolean; canDelete: boolean }
 export interface DistrictContextMenu { x: number; y: number; districtId: string; point: Point; segmentIndex?: number; vertexIndex?: number; canAdd: boolean; canDelete: boolean }
-export type ValidationKey = "eyedropper.empty" | "road.invalid.water" | "road.invalid.short" | "zone.noRoadArea" | "landscaping.noRoadArea" | "landscaping.invalid" | "district.invalid" | "district.overlap" | "building.invalid" | "building.noRoadArea" | "water.invalid" | "water.invalid.road" | "water.island.invalid" | "water.island.outside" | "facility.invalid.building" | "bus.invalid.route" | "bus.invalid.stops" | "bus.invalid.loop" | "bus.placeStart" | "bus.placeEnd" | "bus.invalid.extension" | "rail.invalid.track" | "rail.invalid.line" | "rail.invalid.disconnected" | "rail.trackMiss" | "rail.stationMiss" | "rail.placeStart" | "rail.placeEnd" | "rail.placeStation" | "rail.invalid.extension" | "rail.invalid.station" | "block.invalid" | "block.invalid.water" | "university.invalid.zone" | "university.invalid.affiliationSchool" | "university.invalid.affiliationHospital" | "university.invalid.affiliationFacility" | "university.invalid.alumniCompany";
+export type ValidationKey = "service.pickStart" | "service.pickEnd" | "service.invalidRoute" | "service.invalidZone" | "eyedropper.empty" | "road.invalid.water" | "road.invalid.short" | "zone.noRoadArea" | "landscaping.noRoadArea" | "landscaping.invalid" | "district.invalid" | "district.overlap" | "building.invalid" | "building.noRoadArea" | "water.invalid" | "water.invalid.road" | "water.island.invalid" | "water.island.outside" | "facility.invalid.building" | "bus.invalid.route" | "bus.invalid.stops" | "bus.invalid.loop" | "bus.placeStart" | "bus.placeEnd" | "bus.invalid.extension" | "rail.invalid.track" | "rail.invalid.line" | "rail.invalid.disconnected" | "rail.trackMiss" | "rail.stationMiss" | "rail.placeStart" | "rail.placeEnd" | "rail.placeStation" | "rail.invalid.extension" | "rail.invalid.station" | "block.invalid" | "block.invalid.water" | "university.invalid.zone" | "university.invalid.affiliationSchool" | "university.invalid.affiliationHospital" | "university.invalid.affiliationFacility" | "university.invalid.alumniCompany";
 interface MapViewportOptions {
   layers: LayerVisibility;
   tool: EditorTool;
@@ -80,7 +85,7 @@ interface MapViewportOptions {
   onCampusCreated?: (zoneId: string) => void;
 }
 
-type Gesture = "pan" | "rotate" | "canvas" | "measure" | "marquee" | "spatial-group" | "node" | "road" | "road-control" | "zone" | "zone-vertex" | "park" | "park-vertex" | "district" | "district-vertex" | "water" | "water-vertex" | "building" | "building-vertex" | "building-edge" | "facility" | "bus-stop" | null;
+type Gesture = "service-waypoint" | "pan" | "rotate" | "canvas" | "measure" | "marquee" | "spatial-group" | "node" | "road" | "road-control" | "zone" | "zone-vertex" | "park" | "park-vertex" | "district" | "district-vertex" | "water" | "water-vertex" | "building" | "building-vertex" | "building-edge" | "facility" | "bus-stop" | null;
 type DraftBusStop = Omit<BusStop, "id" | "lineId">;
 
 export class MapViewport {
@@ -137,6 +142,8 @@ export class MapViewport {
   private draggedWater?: { id: string; beforePoints: Point[]; startWorld: Point; vertexIndex?: number };
   private busDraft?: { stops: DraftBusStop[]; path: BusPathStep[] };
   private busExtension?: { lineId: string; endpoint: "start" | "end" };
+  private serviceDraft?: { startZoneId: string; waypoints: Point[] };
+  private draggedServiceWaypoint?: { id: string; index: number; before: Point[] };
   private busCandidate?: { stop: DraftBusStop; path?: BusPathStep[]; closes: boolean };
   private railTrackDraft: Point[] = [];
   private railTrackCurveMidpoint?: Point;
@@ -180,7 +187,7 @@ export class MapViewport {
         else if (change === "buildings") this.renderer?.refreshBuildings(this.editor.selection);
         else if (change === "pois") this.renderer?.refreshPOIs(this.editor.selection);
        else if (change === "buses") this.renderer?.refreshTransit(this.editor.selection, this.camera.zoom, this.camera.rotation);
-        else if (change === "railways" || change === "metro-logo") this.renderer?.refreshTransit(this.editor.selection, this.camera.zoom, this.camera.rotation);
+         else if (change === "railways" || change === "metro-logo" || change === "service-routes") this.renderer?.refreshTransit(this.editor.selection, this.camera.zoom, this.camera.rotation);
          else if (change === "selection") { this.renderer?.setTransitDisplay?.(this.shouldShowTransitLines(), this.selectedTransportSystem()); this.renderer?.setSelection(this.editor.selection); }
     });
     this.resizeObserver = new ResizeObserver((entries) => { const entry = entries[0]; if (entry) this.resize(entry.contentRect.width, entry.contentRect.height); });
@@ -204,7 +211,18 @@ export class MapViewport {
   public setWaterSettings(water: WaterToolSettings): void { const previousMode = this.options.water.mode; const modeChanged = water.mode !== previousMode; this.options = { ...this.options, water }; this.renderer?.setWaterEditable(this.isEditingWater(), this.editor.selection, this.camera.zoom); if (modeChanged) { this.cancelWater(); if (previousMode === "island") this.renderer?.setParkPreview(); } else if (this.options.tool === "water" && water.mode !== "edit") this.updateWaterPreview(this.previousPointer); }
   public setBlockSettings(block: BlockToolSettings): void { this.options = { ...this.options, block }; if (this.options.tool === "blocks") this.updateBlockPreview(this.previousPointer); }
   public setUniversitySettings(university: UniversityToolSettings): void { const changed = university.mode !== this.options.university.mode; this.options = { ...this.options, university }; if (changed) { this.cancelZone(); const selection = this.editor.selection; if (university.mode === "edit" && selection?.kind === "zone" && !this.isCampusZone(this.editor.state.city.zones.find((zone) => zone.id === selection.id))) this.editor.select(null); } this.renderer?.setZoneEditable(this.isEditingZones(), this.editor.selection); if (this.isZoneDrawingTool()) this.updateZonePreview(this.previousPointer); }
-  public setBusSettings(bus: BusToolSettings): void { const systemChanged = bus.system !== this.options.bus.system; const modeChanged = bus.mode !== this.options.bus.mode || systemChanged; const rail = bus.rail ?? this.options.rail; const railChanged = rail.mode !== this.options.rail.mode || rail.trackShape !== this.options.rail.trackShape || rail.structure !== this.options.rail.structure; this.options = { ...this.options, bus, rail }; this.renderer?.setTransitDisplay(this.shouldShowTransitLines(), bus.system); if (modeChanged) this.cancelBus(); if (systemChanged || railChanged) this.cancelRail(); if (this.options.tool === "transit" && bus.system === "bus" && bus.mode === "create") this.updateBusPreview(this.previousPointer); else if (this.options.tool === "transit" && this.activeRailSystem() && rail.mode === "line" && this.hasRailLineDraft()) this.renderRailLinePreview(this.previousPointer); }
+  public setBusSettings(bus: BusToolSettings): void {
+    const systemChanged = bus.system !== this.options.bus.system; const modeChanged = bus.mode !== this.options.bus.mode || systemChanged;
+    const serviceChanged = bus.service?.mode !== this.options.bus.service?.mode;
+    const rail = bus.rail ?? this.options.rail; const railChanged = rail.mode !== this.options.rail.mode || rail.trackShape !== this.options.rail.trackShape || rail.structure !== this.options.rail.structure;
+    this.options = { ...this.options, bus, rail }; this.renderer?.setTransitDisplay(this.shouldShowTransitLines(), bus.system);
+    if (modeChanged) this.cancelBus(); if (systemChanged || railChanged) this.cancelRail();
+    if (systemChanged || serviceChanged) { this.cancelServiceRoute(); this.cancelZone(); }
+    this.renderer?.setZoneEditable(this.isEditingZones(), this.editor.selection);
+    if (this.options.tool === "transit" && bus.system === "bus" && bus.mode === "create") this.updateBusPreview(this.previousPointer);
+    else if (this.options.tool === "transit" && this.activeServiceSystem()) this.renderServiceRoutePreview(this.previousPointer);
+    else if (this.options.tool === "transit" && this.activeRailSystem() && rail.mode === "line" && this.hasRailLineDraft()) this.renderRailLinePreview(this.previousPointer);
+  }
   public setRailSettings(rail: RailToolSettings): void { const changed = rail.mode !== this.options.rail.mode || rail.trackShape !== this.options.rail.trackShape || rail.structure !== this.options.rail.structure; this.options = { ...this.options, rail }; if (changed) this.cancelRail(); else if (this.options.tool === "transit" && this.activeRailSystem() && rail.mode === "line" && this.hasRailLineDraft()) this.renderRailLinePreview(this.previousPointer); }
   public setMeasurementSettings(measurement: MeasurementToolSettings): void { const modeChanged = measurement.mode !== this.options.measurement.mode; this.options = { ...this.options, measurement }; if (modeChanged && this.options.tool === "measure") this.cancelMeasurement(); else if (this.options.tool === "measure") this.renderMeasurement(); }
   public setShortcuts(shortcuts: KeyboardShortcuts): void { this.options = { ...this.options, shortcuts }; }
@@ -305,6 +323,7 @@ export class MapViewport {
     else if (this.options.tool === "buildings" && this.options.building.mode !== "edit" && this.options.building.mode !== "road-area" && this.options.building.mode !== "roadside") this.scheduleBuildingPreview(this.previousPointer);
     else if (this.options.tool === "blocks") this.updateBlockPreview(this.previousPointer);
     else if (this.options.tool === "transit") {
+      if (this.activeServiceSystem()) this.renderServiceRoutePreview(this.previousPointer);
       if (this.options.bus.system === "bus") this.updateBusPreview(this.previousPointer);
       else if (this.options.bus.system === "train" && this.options.rail.mode === "track" && this.railTrackDraft.length) this.updateRailTrackPreview(this.previousPointer);
       else if (this.options.rail.mode === "line" && this.hasRailLineDraft()) this.renderRailLinePreview(this.previousPointer);
@@ -371,6 +390,18 @@ export class MapViewport {
     }
     if (this.options.tool === "roads") { if (this.options.road.shape === "edit") { if (!this.beginRoadInteraction(screen, event.shiftKey)) { if (!event.shiftKey) this.editor.select(null); this.gesture = "pan"; this.canvas?.classList.add("is-panning"); } return; } this.pointerId = null; this.handleRoadClick(screen); return; }
     if (this.options.tool === "transit") {
+      if (this.activeServiceSystem()) {
+        const mode = this.serviceSettings().mode;
+        if (mode === "zone") { this.finishPointerCapture(event.pointerId); this.handleZoneClick(screen, event.detail >= 2); return; }
+        if (mode === "line") { this.finishPointerCapture(event.pointerId); this.handleServiceRouteClick(screen); return; }
+        const selection = this.editor.selection; const selectedRoute = selection?.kind === "service-route" ? this.editor.state.city.serviceRoutes?.find((route) => route.id === selection.id && route.system === this.activeServiceSystem()) : undefined;
+        const index = selectedRoute?.waypoints.findIndex((point) => distance(this.camera.mapToScreen(point), screen) <= 12) ?? -1;
+        if (selectedRoute && index >= 0) { this.draggedServiceWaypoint = { id: selectedRoute.id, index, before: structuredClone(selectedRoute.waypoints) }; this.gesture = "service-waypoint"; return; }
+        const vertex = this.pickZoneVertex(screen, 12); const terminal = vertex?.zone ?? this.pickServiceTerminal(screen);
+        if (terminal) { this.editor.select({ kind: "zone", id: terminal.id }); this.draggedZone = { id: terminal.id, beforePolygon: structuredClone(terminal.polygon), vertexIndex: vertex?.index }; this.gesture = vertex ? "zone-vertex" : "zone"; return; }
+        const route = this.pickServiceRoute(screen); if (route) { this.editor.select({ kind: "service-route", id: route.id }); this.finishPointerCapture(event.pointerId); return; }
+        this.editor.select(null); this.gesture = "pan"; this.canvas?.classList.add("is-panning"); return;
+      }
       if (this.activeRailSystem()) {
         if (this.railStationInsertionLineId) { this.pointerId = null; this.handleRailStationInsertionClick(screen); return; }
         if (this.options.bus.system === "train" && this.options.rail.mode === "track") { this.pointerId = null; this.handleRailTrackClick(screen, event.detail >= 2); return; }
@@ -426,6 +457,7 @@ export class MapViewport {
       if (this.options.tool === "public" || this.isUniversityFacilityMode()) { this.editor.select(null); this.gesture = "pan"; this.canvas?.classList.add("is-panning"); return; }
     }
     if (this.options.tool === "select") {
+      const serviceRoute = this.pickServiceRoute(screen); if (serviceRoute) { this.editor.select({ kind: "service-route", id: serviceRoute.id }); this.finishPointerCapture(event.pointerId); return; }
       const busStop = this.pickBusStop(screen); if (busStop) { this.editor.select({ kind: "bus-stop", id: busStop.id }); this.pointerId = null; return; }
       const busLine = this.pickBusLine(screen); if (busLine) { this.editor.select({ kind: "bus-line", id: busLine.id }); this.pointerId = null; return; }
       if (this.beginRoadInteraction(screen, event.shiftKey)) return;
@@ -455,6 +487,7 @@ export class MapViewport {
     if (this.options.tool === "buildings" && this.options.building.mode !== "edit" && this.options.building.mode !== "roadside" && this.options.building.mode !== "road-area" && this.pointerId === null) this.scheduleBuildingPreview(current);
     if (this.options.tool === "blocks" && this.pointerId === null) this.updateBlockPreview(current);
     if (this.options.tool === "measure" && this.measurementClickPending && this.pointerId === null) { this.measurementEnd = this.camera.screenToMap(current); this.renderMeasurement(); }
+    if (this.options.tool === "transit" && this.activeServiceSystem() && this.serviceSettings().mode === "line" && this.pointerId === null) this.renderServiceRoutePreview(current);
     if (this.options.tool === "transit" && this.options.bus.system === "bus" && (this.options.bus.mode === "create" || this.busExtension) && this.pointerId === null) this.updateBusPreview(current);
     if (this.options.tool === "transit" && this.options.bus.system === "train" && this.options.rail.mode === "track" && this.pointerId === null && this.railTrackDraft.length) this.updateRailTrackPreview(current);
     if (this.options.tool === "transit" && this.activeRailSystem() && this.options.rail.mode === "line" && this.pointerId === null && this.railLineDraft.length) this.renderRailLinePreview(current);
@@ -467,6 +500,7 @@ export class MapViewport {
     else if (this.gesture === "spatial-group" && this.draggedSpatial) { const previousWorld = this.camera.screenToMap(this.previousPointer); const currentWorld = this.camera.screenToMap(current); this.editor.translateSpatialSelection({ x: currentWorld.x - previousWorld.x, y: currentWorld.y - previousWorld.y }); const selection = this.editor.selection; if (selection?.kind === "spatial-group") this.scheduleSpatialLayerRefresh(selection.items); }
     else if (this.gesture === "canvas" && this.draggedCanvas) { const currentWorld = this.camera.screenToMap(current); this.canvasDraft = dragCanvasBounds(this.draggedCanvas.before, this.draggedCanvas.startWorld, currentWorld, this.draggedCanvas.handle); this.renderCanvasBoundary(); }
     else if (this.gesture === "measure") { this.measurementEnd = this.camera.screenToMap(current); this.renderMeasurement(); }
+    else if (this.gesture === "service-waypoint" && this.draggedServiceWaypoint) { const route = this.editor.state.city.serviceRoutes?.find((route) => route.id === this.draggedServiceWaypoint!.id); if (route) { route.waypoints[this.draggedServiceWaypoint.index] = this.camera.screenToMap(current); this.renderer?.refreshTransit(this.editor.selection, this.camera.zoom, this.camera.rotation); } }
     else if (this.gesture === "node" && this.draggedNode) {
       const node = this.editor.state.city.roadNodes.find((entry) => entry.id === this.draggedNode?.id);
       const target = this.pickMergeTarget(current, this.draggedNode.id);
@@ -518,6 +552,11 @@ export class MapViewport {
     if (event.pointerId !== this.pointerId) return;
     this.wakeRenderer();
     if (this.gesture === "canvas") { const bounds = this.canvasDraft; this.finishCanvasInteraction(event.pointerId); if (bounds) this.editor.setCanvasBounds(bounds); return; }
+    if (this.gesture === "service-waypoint" && this.draggedServiceWaypoint) {
+      const dragged = this.draggedServiceWaypoint; const route = this.editor.state.city.serviceRoutes?.find((route) => route.id === dragged.id);
+      if (route) { const waypoints = structuredClone(route.waypoints); route.waypoints = dragged.before; this.editor.updateServiceRoute(route.id, { waypoints }); }
+      this.draggedServiceWaypoint = undefined; this.finishPointerCapture(event.pointerId); return;
+    }
     if (this.gesture === "measure") {
       const screen = this.eventPoint(event); this.measurementEnd = this.camera.screenToMap(screen);
       this.measurementClickPending = Boolean(this.measurementPointerStart && distance(this.measurementPointerStart, screen) < 4);
@@ -552,6 +591,7 @@ export class MapViewport {
     this.canvas?.classList.remove("is-panning", "is-rotating", "is-measuring", "is-moving-road", "is-moving-zone", "is-moving-park", "is-moving-district", "is-moving-water", "is-moving-building", "is-moving-facility", "is-moving-bus", "is-moving-selection");
   };
   private handlePointerCancel = (event: PointerEvent): void => {
+    if (event.pointerId === this.pointerId && this.gesture === "service-waypoint") { this.cancelServiceRoute(); return; }
     if (event.pointerId === this.pointerId && (this.gesture === "marquee" || this.gesture === "spatial-group")) { this.cancelSpatialInteraction(); return; }
     if (event.pointerId === this.pointerId && this.gesture === "canvas") { this.cancelCanvasInteraction(); return; }
     if (event.pointerId === this.pointerId && this.gesture === "measure") { this.cancelMeasurement(); this.gesture = null; this.pointerId = null; if (this.canvas?.hasPointerCapture(event.pointerId)) this.canvas.releasePointerCapture(event.pointerId); return; }
@@ -577,6 +617,7 @@ export class MapViewport {
     if (!this.options.inputEnabled) return;
     this.wakeRenderer();
     if (this.options.tool === "eyedropper") { event.preventDefault(); this.options.onValidation?.(); this.options.onEyedropper?.(); return; }
+    if (this.options.tool === "transit" && this.activeServiceSystem() && this.serviceSettings().mode === "line") { event.preventDefault(); if (this.serviceDraft?.waypoints.length) this.serviceDraft.waypoints.pop(); else this.serviceDraft = undefined; this.renderServiceRoutePreview(this.previousPointer); return; }
     if (this.options.tool === "canvas") { event.preventDefault(); this.cancelCanvasInteraction(); return; }
     if (this.busExtension) { event.preventDefault(); this.cancelBus(); return; }
     if (this.railStationInsertionLineId) { event.preventDefault(); this.cancelRail(); return; }
@@ -612,7 +653,9 @@ export class MapViewport {
     else if (event.key === "Enter" && this.options.tool === "transit" && this.options.bus.system === "train" && this.options.rail.mode === "track") { event.preventDefault(); this.finishRailTrack(); }
     else if (event.key === "Enter" && this.options.tool === "transit" && this.activeRailSystem() && this.options.rail.mode === "line") { event.preventDefault(); this.finishRailLine(); }
     else if (event.key === "Enter" && this.options.tool === "transit" && this.options.bus.system === "bus" && this.options.bus.mode === "create") { event.preventDefault(); this.finishOpenBusRoute(); }
-    else if (event.key === "Enter" && (this.options.tool === "zones" && this.options.zone.mode === "custom" || this.options.tool === "university" && this.options.university.mode === "zone")) this.finishZone();
+    else if (event.key === "Enter" && this.isZoneDrawingTool()) { event.preventDefault(); this.finishZone(); }
+    else if (event.key === "Enter" && this.options.tool === "transit" && this.activeServiceSystem() && this.serviceSettings().mode === "line" && this.serviceDraft) { event.preventDefault(); if (this.pickServiceTerminal(this.previousPointer)) this.handleServiceRouteClick(this.previousPointer); else this.options.onValidation?.("service.pickEnd"); }
+    else if ((event.key === "Delete" || event.key === "Backspace") && this.options.tool === "transit" && this.activeServiceSystem() && this.serviceSettings().mode === "edit") { event.preventDefault(); this.editor.deleteSelected(); }
     else if (event.key === "Enter" && this.options.tool === "parks" && this.options.landscaping.mode === "custom") this.finishPark();
     else if (event.key === "Enter" && this.options.tool === "districts" && this.options.district.mode === "custom") this.finishDistrict();
     else if (event.key === "Enter" && this.options.tool === "water" && (this.options.water.mode === "free" || this.options.water.mode === "river" || this.options.water.mode === "island")) this.finishWater();
@@ -621,7 +664,7 @@ export class MapViewport {
     else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c" && this.options.tool === "marquee") { if (this.editor.copySpatialSelection()) event.preventDefault(); }
     else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v" && this.options.tool === "marquee") { if (this.editor.pasteSpatialSelection()) event.preventDefault(); }
     else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "d" && this.options.tool === "marquee") { event.preventDefault(); this.editor.duplicateSpatialSelection(); }
-    else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") { event.preventDefault(); if (!event.shiftKey && this.options.tool === "transit" && this.options.bus.system === "bus" && this.options.bus.mode === "create" && this.busDraft) { this.undoBusDraftStop(); return; } this.cancelCanvasInteraction(); this.cancelRoad(); this.cancelZone(); this.cancelPark(); this.cancelDistrict(); this.cancelWater(); this.cancelBuilding(); this.cancelBlock(); this.cancelBus(); this.cancelMeasurement(); if (event.shiftKey) this.editor.redo(); else this.editor.undo(); }
+    else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "z") { event.preventDefault(); if (!event.shiftKey && this.options.tool === "transit" && this.options.bus.system === "bus" && this.options.bus.mode === "create" && this.busDraft) { this.undoBusDraftStop(); return; } if (!event.shiftKey && this.serviceDraft) { if (this.serviceDraft.waypoints.length) this.serviceDraft.waypoints.pop(); else this.serviceDraft = undefined; this.renderServiceRoutePreview(this.previousPointer); return; } this.cancelCanvasInteraction(); this.cancelRoad(); this.cancelZone(); this.cancelPark(); this.cancelDistrict(); this.cancelWater(); this.cancelBuilding(); this.cancelBlock(); this.cancelBus(); this.cancelServiceRoute(); this.cancelMeasurement(); if (event.shiftKey) this.editor.redo(); else this.editor.undo(); }
     else if (!event.ctrlKey && !event.metaKey && !event.altKey) {
       const key = event.key.toLowerCase(); const shortcuts = this.options.shortcuts; const center = { x: this.viewportWidth / 2, y: this.viewportHeight / 2 };
       if (key === shortcuts.panUp) this.camera.panBy(0, 42);
@@ -708,7 +751,7 @@ export class MapViewport {
   }
   private undoRailLinePoint(): void { if (this.railLineExtension && this.railLineDraft.length <= 1) { this.cancelRail(); return; } if (this.railLineDraft.length === 0) return; this.railLineDraft.pop(); this.options.onValidation?.(); if (this.railLineDraft.length) this.renderRailLinePreview(this.previousPointer); else this.renderer?.setRailPreview(); }
   private hasRailLineDraft(): boolean { return this.railLineDraft.length > 0; }
-  private cancelRail(): void { this.railTrackDraft = []; this.railTrackCurveMidpoint = undefined; this.railLineDraft = []; this.railLineExtension = undefined; this.railStationInsertionLineId = undefined; this.renderer?.setRailPreview(); this.options.onValidation?.(); }
+  private cancelRail(): void { this.cancelServiceRoute(); this.railTrackDraft = []; this.railTrackCurveMidpoint = undefined; this.railLineDraft = []; this.railLineExtension = undefined; this.railStationInsertionLineId = undefined; this.renderer?.setRailPreview(); this.options.onValidation?.(); }
 
   private handleRailStationInsertionClick(screen: Point): void {
     const lineId = this.railStationInsertionLineId; if (!lineId) return; const line = this.editor.state.city.railLines?.find((candidate) => candidate.id === lineId); if (!line) { this.cancelRail(); return; } const prefix = line.system === "metro" ? this.options.rail.metroStationNamePrefix?.trim() || "Metro Station" : this.options.rail.trainStationNamePrefix?.trim() || "Rail Station";
@@ -783,8 +826,43 @@ export class MapViewport {
     this.busDraft = { stops, path }; this.busCandidate = undefined; this.options.onValidation?.(); this.updateBusPreview(this.previousPointer);
   }
   private cancelBus(): void { this.busDraft = undefined; this.busExtension = undefined; this.busCandidate = undefined; this.canvas?.classList.remove("is-creating-bus"); this.renderer?.setTransitLoopPreview(); this.options.onValidation?.(); }
-  private shouldShowTransitLines(): boolean { const selection = this.editor.selection; return this.options.tool === "transit" && this.options.bus.system !== undefined || selection?.kind === "bus-line" || selection?.kind === "rail-line"; }
-  private selectedTransportSystem(): TransportSystem | undefined { const selection = this.editor.selection; if (selection?.kind === "bus-line") return "bus"; if (selection?.kind === "rail-line") return this.editor.state.city.railLines?.find((line) => line.id === selection.id)?.system ?? "train"; return this.options.bus.system; }
+  private shouldShowTransitLines(): boolean { const selection = this.editor.selection; return this.options.tool === "transit" && this.options.bus.system !== undefined || selection?.kind === "bus-line" || selection?.kind === "rail-line" || selection?.kind === "service-route"; }
+  private selectedTransportSystem(): TransportSystem | undefined { if (this.options.tool === "transit") return this.options.bus.system; const selection = this.editor.selection; if (selection?.kind === "service-route") return this.editor.state.city.serviceRoutes?.find((route) => route.id === selection.id)?.system; if (selection?.kind === "bus-line") return "bus"; if (selection?.kind === "rail-line") return this.editor.state.city.railLines?.find((line) => line.id === selection.id)?.system ?? "train"; return this.options.bus.system; }
+  private activeServiceSystem(): ServiceRouteSystem | undefined { return this.options.bus.system === "airplane" || this.options.bus.system === "ferry" ? this.options.bus.system : undefined; }
+  private serviceSettings(): ServiceRouteToolSettings { return this.options.bus.service ?? { mode: "zone", name: "", color: "#367f95", terminalName: "", terminalPrefix: "Terminal", routePrefix: "Route" }; }
+  private pickServiceTerminal(screen: Point) {
+    const system = this.activeServiceSystem(); if (!system || !this.options.layers.transit && !this.options.layers.zoning) return undefined;
+    const city = this.editor.state.city; const world = this.camera.screenToMap(screen); const anchors = terminalAnchors(city.zones);
+    return [...city.zones].reverse().find((zone) => zone.type === terminalZoneType(system) && (this.options.layers.zoning && pointInPolygon(world, zone.polygon) || this.options.layers.transit && anchors.has(zone.id) && distance(this.camera.mapToScreen(anchors.get(zone.id)!), screen) <= 18));
+  }
+  private pickServiceRoute(screen: Point) {
+    if (!this.options.layers.transit || !this.shouldShowTransitLines()) return undefined;
+    const city = this.editor.state.city; const anchors = terminalAnchors(city.zones); const system = this.selectedTransportSystem(); const point = this.camera.screenToMap(screen);
+    return (city.serviceRoutes ?? []).filter((route) => route.system === system).map((route) => ({ route, distance: serviceRouteDistance(point, sampleServiceRoute(route.system, serviceRoutePoints(route, anchors))) })).filter((hit) => hit.distance <= 10 / this.camera.zoom).sort((a, b) => a.distance - b.distance)[0]?.route;
+  }
+  private handleServiceRouteClick(screen: Point): void {
+    const system = this.activeServiceSystem(); if (!system) return; const terminal = this.pickServiceTerminal(screen); const settings = this.serviceSettings();
+    if (!this.serviceDraft) { if (!terminal) { this.options.onValidation?.("service.pickStart"); return; } this.serviceDraft = { startZoneId: terminal.id, waypoints: [] }; this.editor.select(null); this.options.onValidation?.("service.pickEnd"); }
+    else if (terminal) {
+      const draft = this.serviceDraft; const city = this.editor.state.city;
+      const id = this.editor.createServiceRoute({ system, name: settings.name.trim() || `${settings.routePrefix} ${(city.serviceRoutes ?? []).filter((route) => route.system === system).length + 1}`, color: settings.color, startZoneId: draft.startZoneId, endZoneId: terminal.id, waypoints: draft.waypoints });
+      if (!id) { this.options.onValidation?.("service.invalidRoute"); return; } this.serviceDraft = undefined; this.options.onValidation?.();
+    } else if (this.serviceDraft.waypoints.length < 1000) { this.serviceDraft.waypoints.push(this.camera.screenToMap(screen)); this.options.onValidation?.("service.pickEnd"); }
+    this.renderServiceRoutePreview(screen);
+  }
+  private renderServiceRoutePreview(screen: Point): void {
+    const system = this.activeServiceSystem(); if (!system || this.options.tool !== "transit" || this.serviceSettings().mode !== "line") return;
+    if (!this.serviceDraft) { this.renderer?.setServiceRoutePreview?.(); return; }
+    const anchors = terminalAnchors(this.editor.state.city.zones); const start = anchors.get(this.serviceDraft.startZoneId); if (!start) { this.cancelServiceRoute(); return; }
+    const terminal = this.pickServiceTerminal(screen); const end = terminal ? anchors.get(terminal.id)! : this.camera.screenToMap(screen);
+    this.renderer?.setServiceRoutePreview?.({ system, points: [start, ...this.serviceDraft.waypoints, end], color: this.serviceSettings().color }, { zoom: this.camera.zoom, rotation: this.camera.rotation });
+  }
+  private cancelServiceRoute(): void {
+    if (this.draggedServiceWaypoint) { const route = this.editor.state.city.serviceRoutes?.find((route) => route.id === this.draggedServiceWaypoint!.id); if (route) route.waypoints = this.draggedServiceWaypoint.before; this.renderer?.refreshTransit(this.editor.selection, this.camera.zoom, this.camera.rotation); }
+    this.draggedServiceWaypoint = undefined; this.serviceDraft = undefined;
+    if (this.gesture === "service-waypoint" && this.pointerId !== null) this.finishPointerCapture(this.pointerId);
+    this.renderer?.setServiceRoutePreview?.();
+  }
   private activeRailSystem(): RailSystem | undefined { return this.options.bus.system === "train" || this.options.bus.system === "metro" ? this.options.bus.system : undefined; }
 
   private handleRoadClick(screen: Point): void {
@@ -825,16 +903,21 @@ export class MapViewport {
   private cancelRoad(): void { this.roadStart = undefined; this.curveMidpoint = undefined; this.shapeCenter = undefined; this.parallelRoadId = undefined; this.renderer?.setRoadPreview(); this.options.onRoadMeasurement?.(); this.options.onValidation?.(); }
   private handleZoneClick(screen: Point, doubleClick: boolean): void {
     const world = this.camera.screenToMap(screen);
-    if (this.options.zone.mode === "road-fill") { const polygon = this.getRoadFillPolygon(world); if (polygon) { this.createZone(polygon, "road-fill"); this.options.onValidation?.(); } else this.options.onValidation?.("zone.noRoadArea"); return; }
+    if (this.options.zone.mode === "road-fill" && this.options.tool !== "transit") { const polygon = this.getRoadFillPolygon(world); if (polygon) { this.createZone(polygon, "road-fill"); this.options.onValidation?.(); } else this.options.onValidation?.("zone.noRoadArea"); return; }
     if (doubleClick) { this.finishZone(); return; }
     this.zoneDraft.push(world); this.updateZonePreview(screen);
   }
-  private finishZone(): void { if (this.zoneDraft.length >= 3) this.createZone(this.zoneDraft, "custom"); this.cancelZone(); }
-  private createZone(polygon: Point[], source: "custom" | "road-fill"): void { const input = { name: "", type: this.options.zone.type, polygon: polygon.map((point) => ({ ...point })), source, opacity: 0.38, color: this.options.zone.color, icon: this.options.zone.icon, iconColor: this.options.zone.iconColor, iconOpacity: this.options.zone.iconOpacity }; if (this.options.tool === "university") { const universityId = this.options.university.universityId; const zoneId = universityId || this.options.university.createUniversity ? this.editor.createCampusZone(input, universityId)?.zoneId : this.editor.createPendingCampusZone(input); if (zoneId) this.options.onCampusCreated?.(zoneId); } else this.editor.createZone(input); }
+  private finishZone(): void { if (this.options.tool === "transit" && this.activeServiceSystem() && !isValidWaterPolygon(this.zoneDraft)) { this.options.onValidation?.("service.invalidZone"); return; } if (this.zoneDraft.length >= 3) this.createZone(this.zoneDraft, "custom"); this.cancelZone(); this.options.onValidation?.(); }
+  private createZone(polygon: Point[], source: "custom" | "road-fill"): void {
+    const input = { name: "", type: this.options.zone.type, polygon: polygon.map((point) => ({ ...point })), source, opacity: 0.38, color: this.options.zone.color, icon: this.options.zone.icon, iconColor: this.options.zone.iconColor, iconOpacity: this.options.zone.iconOpacity };
+    const system = this.activeServiceSystem();
+    if (this.options.tool === "transit" && system) { const type = terminalZoneType(system); const settings = this.serviceSettings(); this.editor.createZone({ ...input, type, name: settings.terminalName.trim() || `${settings.terminalPrefix} ${this.editor.state.city.zones.filter((zone) => zone.type === type).length + 1}`, color: defaultZoneColors[type], icon: defaultZoneIcons[type], iconColor: defaultZoneIconColors[type], iconOpacity: 1 }); }
+    else if (this.options.tool === "university") { const universityId = this.options.university.universityId; const zoneId = universityId || this.options.university.createUniversity ? this.editor.createCampusZone(input, universityId)?.zoneId : this.editor.createPendingCampusZone(input); if (zoneId) this.options.onCampusCreated?.(zoneId); } else this.editor.createZone(input);
+  }
   private updateZonePreview(screen: Point): void {
     if (!this.isZoneDrawingTool()) { this.hoveredRoadFill = undefined; this.renderer?.setZonePreview(); return; }
-    if (this.options.zone.mode === "road-fill") { this.hoveredRoadFill = this.getRoadFillPolygon(this.camera.screenToMap(screen)); this.renderer?.setZonePreview(this.hoveredRoadFill ? { polygon: this.hoveredRoadFill, color: this.options.zone.color, valid: true, closed: true } : undefined); return; }
-    if (this.zoneDraft.length === 0) { this.renderer?.setZonePreview(); return; } const polygon = [...this.zoneDraft, this.camera.screenToMap(screen)]; this.renderer?.setZonePreview({ polygon, color: this.options.zone.color, valid: polygon.length >= 3, closed: polygon.length >= 3 });
+    if (this.options.zone.mode === "road-fill" && this.options.tool !== "transit") { this.hoveredRoadFill = this.getRoadFillPolygon(this.camera.screenToMap(screen)); this.renderer?.setZonePreview(this.hoveredRoadFill ? { polygon: this.hoveredRoadFill, color: this.options.zone.color, valid: true, closed: true } : undefined); return; }
+    if (this.zoneDraft.length === 0) { this.renderer?.setZonePreview(); return; } const polygon = [...this.zoneDraft, this.camera.screenToMap(screen)]; const system = this.options.tool === "transit" ? this.activeServiceSystem() : undefined; this.renderer?.setZonePreview({ polygon, color: system ? defaultZoneColors[terminalZoneType(system)] : this.options.zone.color, valid: system ? isValidWaterPolygon(polygon) : polygon.length >= 3, closed: polygon.length >= 3 });
   }
   private cancelZone(): void { this.zoneDraft = []; this.hoveredRoadFill = undefined; this.renderer?.setZonePreview(); this.options.onZoneContextMenu?.(); }
   private handleParkClick(screen: Point, doubleClick: boolean): void {
@@ -1110,11 +1193,11 @@ export class MapViewport {
     const road = this.pickRoad(screen); if (!road) return false; if (additive) { this.editor.toggleRoadElements([road.id]); this.pointerId = null; return true; } this.editor.select({ kind: "road", id: road.roadId, edgeId: road.id, scope: "segment" }); const nodeIds = new Set([road.startNodeId, road.endNodeId]); this.draggedRoad = { roadId: road.roadId, edgeIds: [road.id], beforePositions: this.editor.state.city.roadNodes.filter((candidate) => nodeIds.has(candidate.id)).map((candidate) => ({ id: candidate.id, x: candidate.x, y: candidate.y })), beforeGeometries: [{ id: road.id, geometry: structuredClone(road.geometry) }] }; this.gesture = "road"; this.canvas?.classList.add("is-moving-road"); return true;
   }
   private isEditingRoadGeometry(): boolean { return this.options.tool === "roads" && this.options.road.shape === "edit"; }
-  private isEditingZones(): boolean { return this.options.tool === "zones" && this.options.zone.mode === "edit" || this.options.tool === "university" && this.options.university.mode === "edit"; }
+  private isEditingZones(): boolean { return this.options.tool === "zones" && this.options.zone.mode === "edit" || this.options.tool === "university" && this.options.university.mode === "edit" || this.options.tool === "transit" && Boolean(this.activeServiceSystem()) && this.serviceSettings().mode === "edit"; }
   private isEditingParks(): boolean { return this.options.tool === "parks" && this.options.landscaping.mode === "edit"; }
   private isEditingDistricts(): boolean { return this.options.tool === "districts" && this.options.district.mode === "edit"; }
   private canDeleteEditingZone(): boolean { const selection = this.editor.selection; if (!this.isEditingZones() || selection?.kind !== "zone") return false; return this.options.tool !== "university" || this.isCampusZone(this.editor.state.city.zones.find((zone) => zone.id === selection.id)); }
-  private isZoneDrawingTool(): boolean { return this.options.tool === "zones" && this.options.zone.mode !== "edit" || this.options.tool === "university" && this.options.university.mode === "zone"; }
+  private isZoneDrawingTool(): boolean { return this.options.tool === "zones" && this.options.zone.mode !== "edit" || this.options.tool === "university" && this.options.university.mode === "zone" || this.options.tool === "transit" && Boolean(this.activeServiceSystem()) && this.serviceSettings().mode === "zone"; }
   private isUniversityFacilityMode(): boolean { return this.options.tool === "university" && this.options.university.mode === "facility"; }
   private isEditingWater(): boolean { return this.options.tool === "water" && this.options.water.mode === "edit"; }
   private pickCanvasHandle(screen: Point): CanvasHandle | undefined {
@@ -1167,14 +1250,14 @@ export class MapViewport {
   private pickZone(screen: Point) { if (!this.options.layers.zoning) return undefined; const world = this.camera.screenToMap(screen); return [...this.editor.state.city.zones].reverse().find((zone) => pointInPolygon(world, zone.polygon)); }
   private pickPark(screen: Point) { if (!this.options.layers.parks) return undefined; const world = this.camera.screenToMap(screen); return [...this.editor.state.city.parks].reverse().find((park) => pointInPolygon(world, park.points)); }
   private pickDistrict(screen: Point, includeHidden = false) { if (!includeHidden && !this.options.layers.districts) return undefined; const world = this.camera.screenToMap(screen); return [...this.editor.state.city.districts].reverse().find((district) => pointInPolygon(world, district.points)); }
-  private pickEditableZone(screen: Point) { if (!this.options.layers.zoning) return undefined; const world = this.camera.screenToMap(screen); return [...this.editor.state.city.zones].reverse().find((zone) => (this.options.tool !== "university" || this.isCampusZone(zone)) && pointInPolygon(world, zone.polygon)); }
+  private pickEditableZone(screen: Point) { if (this.options.tool === "transit" && this.activeServiceSystem()) return this.pickServiceTerminal(screen); if (!this.options.layers.zoning) return undefined; const world = this.camera.screenToMap(screen); return [...this.editor.state.city.zones].reverse().find((zone) => (this.options.tool !== "university" || this.isCampusZone(zone)) && pointInPolygon(world, zone.polygon)); }
   private pickWater(screen: Point) { if (!this.options.layers.water) return undefined; const world = this.camera.screenToMap(screen); return [...this.editor.state.city.waters].reverse().find((water) => pointInPolygon(world, water.points)); }
   private pickWaterVertex(screen: Point, radius: number) { const selection = this.editor.selection; if (!this.options.layers.water || selection?.kind !== "water") return undefined; const water = this.editor.state.city.waters.find((candidate) => candidate.id === selection.id); if (!water) return undefined; const hit = water.points.map((point, index) => ({ index, distance: distance(this.camera.mapToScreen(point), screen) })).filter((candidate) => candidate.distance <= radius).sort((a, b) => a.distance - b.distance)[0]; return hit ? { water, index: hit.index } : undefined; }
   private pickBuilding(screen: Point) { if (!this.options.layers.buildings) return undefined; const world = this.camera.screenToMap(screen); return [...this.editor.state.city.buildings].reverse().find((building) => footprintContainsPoint(building.footprint, world)); }
   private pickFacility(screen: Point): FacilityPOI | undefined { if (!this.options.layers.facilities) return undefined; return [...this.editor.state.city.facilities].reverse().find((facility) => distance(this.camera.mapToScreen(facility.position), screen) <= 18 && (!this.isUniversityFacilityMode() || universityZoneAt(this.editor.state.city.zones, facility.position)?.universityId === this.options.university.universityId)); }
   private pickBuildingVertex(screen: Point, radius: number) { const selection = this.editor.selection; if (!this.options.layers.buildings || selection?.kind !== "building") return undefined; const building = this.editor.state.city.buildings.find((candidate) => candidate.id === selection.id); if (!building) return undefined; const rings = [building.footprint.outer, ...building.footprint.holes]; const hit = rings.flatMap((ring, ringIndex) => ring.map((point, vertexIndex) => ({ building, ringIndex, vertexIndex, distance: distance(this.camera.mapToScreen(point), screen) }))).filter((candidate) => candidate.distance <= radius).sort((a, b) => a.distance - b.distance)[0]; return hit; }
   private pickBuildingEdge(screen: Point, radius: number) { const selection = this.editor.selection; if (!this.options.layers.buildings || selection?.kind !== "building") return undefined; const building = this.editor.state.city.buildings.find((candidate) => candidate.id === selection.id); if (!building) return undefined; const nearest = nearestFootprintEdge(building.footprint, this.camera.screenToMap(screen)); return nearest && nearest.distance <= radius / this.camera.zoom ? { building, ...nearest } : undefined; }
-  private pickZoneVertex(screen: Point, radius: number) { const selection = this.editor.selection; if (!this.options.layers.zoning || selection?.kind !== "zone") return undefined; const zone = this.editor.state.city.zones.find((candidate) => candidate.id === selection.id); if (!zone || this.options.tool === "university" && !this.isCampusZone(zone)) return undefined; const hit = zone.polygon.map((point, index) => ({ index, distance: distance(this.camera.mapToScreen(point), screen) })).filter((candidate) => candidate.distance <= radius).sort((a, b) => a.distance - b.distance)[0]; return hit ? { zone, index: hit.index } : undefined; }
+  private pickZoneVertex(screen: Point, radius: number) { const selection = this.editor.selection; if (!this.options.layers.zoning || selection?.kind !== "zone") return undefined; const zone = this.editor.state.city.zones.find((candidate) => candidate.id === selection.id); const system = this.activeServiceSystem(); if (!zone || this.options.tool === "university" && !this.isCampusZone(zone) || this.options.tool === "transit" && system && zone.type !== terminalZoneType(system)) return undefined; const hit = zone.polygon.map((point, index) => ({ index, distance: distance(this.camera.mapToScreen(point), screen) })).filter((candidate) => candidate.distance <= radius).sort((a, b) => a.distance - b.distance)[0]; return hit ? { zone, index: hit.index } : undefined; }
   private pickParkVertex(screen: Point, radius: number) { const selection = this.editor.selection; if (!this.options.layers.parks || selection?.kind !== "park") return undefined; const park = this.editor.state.city.parks.find((candidate) => candidate.id === selection.id); if (!park) return undefined; const hit = park.points.map((point, index) => ({ index, distance: distance(this.camera.mapToScreen(point), screen) })).filter((candidate) => candidate.distance <= radius).sort((a, b) => a.distance - b.distance)[0]; return hit ? { park, index: hit.index } : undefined; }
   private pickDistrictVertex(screen: Point, radius: number) { const selection = this.editor.selection; if (!this.options.layers.districts || selection?.kind !== "district") return undefined; const district = this.editor.state.city.districts.find((candidate) => candidate.id === selection.id); if (!district) return undefined; const hit = district.points.map((point, index) => ({ index, distance: distance(this.camera.mapToScreen(point), screen) })).filter((candidate) => candidate.distance <= radius).sort((a, b) => a.distance - b.distance)[0]; return hit ? { district, index: hit.index } : undefined; }
   private isCampusZone(zone?: { universityId?: string; purpose?: "university" }): boolean { return Boolean(zone?.purpose === "university" || zone?.universityId && (!this.options.university.universityId || zone.universityId === this.options.university.universityId)); }

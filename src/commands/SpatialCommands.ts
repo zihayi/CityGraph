@@ -1,5 +1,6 @@
 import type { Command } from "./Command";
 import type { City } from "../model/City";
+import { routesMatchingZones } from "../geometry/ServiceRouteGeometry";
 
 export type SpatialCollectionKey = "roadNodes" | "roads" | "roadEdges" | "zones" | "parks" | "districts" | "waters" | "buildings" | "facilities" | "pois" | "universities" | "hospitals" | "companies" | "busTerminals" | "busLines" | "busStops";
 export interface SpatialEntityState { collection: SpatialCollectionKey; index: number; value: { id: string } }
@@ -16,9 +17,10 @@ export function applySpatialEntityStates(city: City, patches: readonly SpatialEn
 }
 
 export class SpatialEntityCommand implements Command {
-  public constructor(public readonly label: string, private readonly city: City, private readonly patches: SpatialEntityPatch[], private readonly onChange: () => void) {}
-  public execute(): void { applySpatialEntityStates(this.city, this.patches, "after"); this.onChange(); }
-  public undo(): void { applySpatialEntityStates(this.city, this.patches, "before"); this.onChange(); }
+  private readonly beforeRoutes;
+  public constructor(public readonly label: string, private readonly city: City, private readonly patches: SpatialEntityPatch[], private readonly onChange: () => void) { this.beforeRoutes = patches.some((patch) => patch.collection === "zones") ? structuredClone(city.serviceRoutes ?? []) : undefined; }
+  public execute(): void { applySpatialEntityStates(this.city, this.patches, "after"); if (this.beforeRoutes) this.city.serviceRoutes = structuredClone(routesMatchingZones(this.beforeRoutes, this.city.zones)); this.onChange(); }
+  public undo(): void { applySpatialEntityStates(this.city, this.patches, "before"); if (this.beforeRoutes) this.city.serviceRoutes = structuredClone(this.beforeRoutes); this.onChange(); }
 }
 
 export function spatialState<K extends SpatialCollectionKey>(city: City, collection: K, value: City[K][number]): SpatialEntityState {

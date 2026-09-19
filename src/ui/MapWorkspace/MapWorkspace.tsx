@@ -1,5 +1,5 @@
 import { Focus, Minus, Plus } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { RefObject } from "react";
 import { useEditorStore, type EditorTool, type KeyboardShortcuts, type LayerVisibility } from "../../app/store/editorStore";
 import type { EyedropperSample } from "../../app/store/eyedropper";
@@ -25,6 +25,8 @@ import { LandscapingToolPalette } from "../LandscapingToolPalette/LandscapingToo
 import { universityZoneAt } from "../../model/FacilityPlacement";
 import { DistrictToolPalette } from "../DistrictToolPalette/DistrictToolPalette";
 import { RailToolPalette } from "../RailToolPalette/RailToolPalette";
+import { ServiceRouteToolPalette } from "../BusToolPalette/ServiceRouteToolPalette";
+import { MapReadout, type MapReadoutHandle, type MapReadoutValue } from "./MapReadout";
 
 interface Props {
   editor: Editor; layers: LayerVisibility; tool: EditorTool; road: RoadToolSettings; zone: ZoneToolSettings; landscaping: LandscapingToolSettings; district: DistrictToolSettings; building: BuildingToolSettings; water: WaterToolSettings; block: BlockToolSettings; university: UniversityToolSettings; bus: BusToolSettings & { rail: RailToolSettings }; measurement: MeasurementToolSettings; shortcuts: KeyboardShortcuts; inputEnabled: boolean; mapRef: RefObject<MapCanvasHandle | null>;
@@ -37,7 +39,9 @@ export function MapWorkspace(props: Props) {
   const [facilityPlacement, setFacilityPlacement] = useState<FacilityPlacement>();
   const [facilityPointer, setFacilityPointer] = useState<FacilityPreview["position"]>();
   const [activeUniversityId, setActiveUniversityId] = useState<string>(); const [activeCampusId, setActiveCampusId] = useState<string>(); const [campusCreationTarget, setCampusCreationTarget] = useState<"new" | string>(); const [highlightedFacilityIds, setHighlightedFacilityIds] = useState<string[]>([]);
-  const [roadMenu, setRoadMenu] = useState<RoadContextMenu>(); const [zoneMenu, setZoneMenu] = useState<ZoneContextMenu>(); const [parkMenu, setParkMenu] = useState<ParkContextMenu>(); const [districtMenu, setDistrictMenu] = useState<DistrictContextMenu>(); const [buildingMenu, setBuildingMenu] = useState<BuildingContextMenu>(); const [measurement, setMeasurement] = useState<{ x: number; y: number; text: string }>();
+  const [roadMenu, setRoadMenu] = useState<RoadContextMenu>(); const [zoneMenu, setZoneMenu] = useState<ZoneContextMenu>(); const [parkMenu, setParkMenu] = useState<ParkContextMenu>(); const [districtMenu, setDistrictMenu] = useState<DistrictContextMenu>(); const [buildingMenu, setBuildingMenu] = useState<BuildingContextMenu>();
+  const readout = useRef<MapReadoutHandle>(null);
+  const setMeasurement = useCallback((value?: MapReadoutValue) => readout.current?.update(value), []);
   const city = props.editor.state.city;
   const affiliationPick = useEditorStore((state) => state.universityAffiliationPick); const setAffiliationPick = useEditorStore((state) => state.setUniversityAffiliationPick); const setCurrentTool = useEditorStore((state) => state.setCurrentTool); const setDistrictMode = useEditorStore((state) => state.setDistrictMode);
   const placingFacility = props.tool === "public" || props.tool === "university" && props.university.mode === "facility";
@@ -90,17 +94,12 @@ export function MapWorkspace(props: Props) {
        onCampus={(id) => { const campus = city.zones.find((zone) => zone.id === id); if (campus?.universityId) setActiveUniversityId(campus.universityId); setActiveCampusId(id); props.editor.select({ kind: "zone", id }); }} t={props.t}
      />}
     {props.tool === "transit" && <TransportTypePalette t={props.t}/>}
+    {props.tool === "transit" && (props.bus.system === "airplane" || props.bus.system === "ferry") && <ServiceRouteToolPalette editor={props.editor} system={props.bus.system} t={props.t}/>}
      {props.tool === "transit" && props.bus.system === "bus" && <BusToolPalette editor={props.editor} t={props.t}/>}
       {props.tool === "transit" && (props.bus.system === "train" || props.bus.system === "metro") && <RailToolPalette editor={props.editor} system={props.bus.system} t={props.t}/>}
      {affiliationPick && <div className="university-affiliation-picker glass-panel"><span>{props.t(affiliationPick.kind === "school" ? "university.pickSchool" : affiliationPick.kind === "hospital" ? "university.pickHospital" : affiliationPick.kind === "alumni-company" ? "university.pickAlumniCompany" : "university.pickFacility")}</span><button type="button" onClick={() => { setAffiliationPick(undefined); setCurrentTool("university"); props.editor.select({ kind: "zone", id: affiliationPick.campusId }); }}>{props.t("common.cancel")}</button></div>}
      {props.validation && <div className="validation-toast">{props.t(props.validation)}</div>}
-    {(props.tool === "measure" || props.tool === "eyedropper") && <div className="utility-tool-panel glass-panel">
-      <strong>{props.t(props.tool === "eyedropper" ? "tools.eyedropper" : props.measurement.mode === "area" ? "measure.area" : "measure.distance")}</strong>
-      <p>{props.t(props.tool === "eyedropper" ? "eyedropper.help" : "measure.instructions")}</p>
-      {props.tool === "measure" && <><output aria-live="polite">{measurement?.text ?? "—"}</output><button type="button" disabled={!measurement} onClick={() => props.mapRef.current?.clearMeasurement()}>{props.t("measure.clear")}</button></>}
-      <button type="button" onClick={() => props.tool === "eyedropper" ? props.onEyedropper() : setCurrentTool("select")}>{props.t("common.cancel")}</button>
-    </div>}
-    {measurement && <div className="road-measurement" style={{ left: measurement.x, top: measurement.y }}>{measurement.text}</div>}
+    <MapReadout ref={readout} tool={props.tool} mode={props.measurement.mode} onClear={() => props.mapRef.current?.clearMeasurement()} onExit={() => props.tool === "eyedropper" ? props.onEyedropper() : setCurrentTool("select")} t={props.t}/>
     {roadMenu && <div className="road-context-menu glass-panel" style={{ left: roadMenu.x, top: roadMenu.y }}><button type="button" disabled={!roadMenu.canAdd} onClick={() => { const nodeId = props.editor.splitRoadEdge(roadMenu.edgeId, roadMenu.point); props.editor.select({ kind: "node", id: nodeId }); setRoadMenu(undefined); }}>+ {props.t("road.node.add")}</button><button type="button" disabled={!roadMenu.canDelete || !roadMenu.nodeId} onClick={() => { if (roadMenu.nodeId) props.editor.dissolveRoadNode(roadMenu.nodeId); setRoadMenu(undefined); }}>- {props.t("road.node.delete")}</button></div>}
     {zoneMenu && <div className="road-context-menu glass-panel" style={{ left: zoneMenu.x, top: zoneMenu.y }}><button type="button" disabled={!zoneMenu.canAdd || zoneMenu.segmentIndex === undefined} onClick={() => { if (zoneMenu.segmentIndex !== undefined) props.editor.addZoneVertex(zoneMenu.zoneId, zoneMenu.segmentIndex, zoneMenu.point); setZoneMenu(undefined); }}>+ {props.t("zone.node.add")}</button><button type="button" disabled={!zoneMenu.canDelete || zoneMenu.vertexIndex === undefined} onClick={() => { if (zoneMenu.vertexIndex !== undefined) props.editor.deleteZoneVertex(zoneMenu.zoneId, zoneMenu.vertexIndex); setZoneMenu(undefined); }}>- {props.t("zone.node.delete")}</button></div>}
     {parkMenu && <div className="road-context-menu glass-panel" style={{ left: parkMenu.x, top: parkMenu.y }}><button type="button" disabled={!parkMenu.canAdd || parkMenu.segmentIndex === undefined} onClick={() => { if (parkMenu.segmentIndex !== undefined) props.editor.addParkVertex(parkMenu.parkId, parkMenu.segmentIndex, parkMenu.point); setParkMenu(undefined); }}>+ {props.t("landscaping.node.add")}</button><button type="button" disabled={!parkMenu.canDelete || parkMenu.vertexIndex === undefined} onClick={() => { if (parkMenu.vertexIndex !== undefined) props.editor.deleteParkVertex(parkMenu.parkId, parkMenu.vertexIndex); setParkMenu(undefined); }}>- {props.t("landscaping.node.delete")}</button></div>}

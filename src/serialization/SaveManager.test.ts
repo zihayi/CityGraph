@@ -157,7 +157,7 @@ describe("SaveManager", () => {
     expect(legacy.aiSnapshot).toBeUndefined();
   });
 
-  it("round-trips transport and recreation zones without changing the format version", async () => {
+  it("round-trips transport and recreation zones in the current format", async () => {
     const saves = new MemoryDirectory(); installStorage(saves); const city = createEmptyCity("Rail City");
     city.zones.push({ id: "central-hsr", name: "Central Station", type: "high-speed-rail-station", polygon: [{ x: 0, y: 0 }, { x: 120, y: 0 }, { x: 120, y: 80 }, { x: 0, y: 80 }], source: "custom", opacity: 0.45, color: "#a7c2cb", icon: "high-speed-rail-station", iconColor: "#2f7580", iconOpacity: 1 });
     city.zones.push({ id: "central-train", name: "Central Train Station", type: "train-station", polygon: [{ x: 130, y: 0 }, { x: 230, y: 0 }, { x: 230, y: 80 }], source: "custom", opacity: 0.45, icon: "train-station" }, { id: "city-airport", name: "City Airport", type: "airport", polygon: [{ x: 240, y: 0 }, { x: 360, y: 0 }, { x: 360, y: 90 }], source: "custom", opacity: 0.45, icon: "airport" });
@@ -166,7 +166,7 @@ describe("SaveManager", () => {
     await new SaveManager().saveAs(city.name, city, { x: 0, y: 0, zoom: 1, rotation: 0 });
 
     const folder = saves.directories.get(city.name)!;
-    expect(JSON.parse(folder.files.get("metadata.json")!.content).formatVersion).toBe(14);
+    expect(JSON.parse(folder.files.get("metadata.json")!.content).formatVersion).toBe(15);
     expect(JSON.parse(folder.files.get("zones.json")!.content).zones).toEqual(city.zones);
     expect((await new SaveManager().load()).city.zones).toEqual(city.zones);
   });
@@ -296,7 +296,7 @@ describe("SaveManager", () => {
       { id: "west", name: "West", lineId: "loop", roadEdgeId: "da", fraction: 0.5, position: { x: 0, y: 50 }, side: "left" },
     );
     city.busLines.push({ id: "open", name: "Cross Town", color: "#2877bb", loop: false, path: [{ roadEdgeId: "ab", forward: true, startFraction: 0.2 }, { roadEdgeId: "bc", forward: true, endFraction: 0.5 }], direction: "start-to-end", stopIds: ["south", "north-east"] }); city.busStops.push({ id: "south", name: "South", lineId: "open", roadEdgeId: "ab", fraction: 0.2, position: { x: 20, y: 0 }, side: "right" }, { id: "north-east", name: "North East", lineId: "open", roadEdgeId: "bc", fraction: 0.5, position: { x: 100, y: 50 }, side: "right" });
-    await new SaveManager().saveAs(city.name, city, { x: 0, y: 0, zoom: 1, rotation: 0 }); const folder = saves.directories.get(city.name)!; expect(JSON.parse(folder.files.get("metadata.json")!.content).formatVersion).toBe(14);
+    await new SaveManager().saveAs(city.name, city, { x: 0, y: 0, zoom: 1, rotation: 0 }); const folder = saves.directories.get(city.name)!; expect(JSON.parse(folder.files.get("metadata.json")!.content).formatVersion).toBe(15);
     const loaded = await new SaveManager().load(); expect(loaded.city.busTerminals).toEqual([]); expect(loaded.city.busLines).toEqual(city.busLines); expect(loaded.city.busStops).toEqual(city.busStops);
     const metadata = JSON.parse(folder.files.get("metadata.json")!.content); metadata.formatVersion = 10; folder.files.get("metadata.json")!.content = JSON.stringify(metadata); const loadedV10 = await new SaveManager().load(); expect(loadedV10.city.busLines).toEqual(city.busLines);
   });
@@ -412,9 +412,9 @@ describe("SaveManager", () => {
 
   it("uses a valid independent building document while an older metadata commit marker remains", async () => { const folder = new MemoryDirectory(); folder.files.set("metadata.json", Object.assign(new MemoryFile(), { content: JSON.stringify({ formatVersion: 5, saveName: "Interrupted", mapName: "Interrupted", updatedAt: "2026-01-01T00:00:00Z" }) })); folder.files.set("map.json", Object.assign(new MemoryFile(), { content: JSON.stringify({ mapSize: "small", worldBounds: { x: 0, y: 0, width: 100, height: 100 }, terrain: "flat", water: [], camera: { x: 0, y: 0, zoom: 1, rotation: 0 } }) })); folder.files.set("roads.json", Object.assign(new MemoryFile(), { content: JSON.stringify({ roadNodes: [], roads: [], roadEdges: [] }) })); folder.files.set("buildings.json", Object.assign(new MemoryFile(), { content: JSON.stringify({ buildings: [{ id: "safe", footprint: { outer: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }], holes: [] }, type: "custom", subtype: "", floors: 1, height: 3, style: "custom" }] }) })); installSaveFolder(folder); const loaded = await new SaveManager().load(); expect(loaded.city.buildings.map((building) => building.id)).toEqual(["safe"]); });
 
-  it("round-trips version 14 passenger railway systems and the metro logo in map.json", async () => {
+  it("round-trips passenger railway systems and the metro logo in map.json", async () => {
     const saves = new MemoryDirectory(); installStorage(saves); const city = createEmptyCity("Passenger Rail"); city.metroLogo = "data:image/png;base64,AA=="; city.railNodes = [{ id: "a", system: "metro", x: 0, y: 0 }, { id: "b", system: "metro", x: 100, y: 0 }, { id: "c", system: "metro", x: 200, y: 0 }, { id: "train-a", system: "train", x: 0, y: 100 }, { id: "train-b", system: "train", x: 100, y: 100 }]; city.railTracks = [{ id: "ab", system: "metro", startNodeId: "a", endNodeId: "b", structure: "ground" }, { id: "bc", system: "metro", startNodeId: "b", endNodeId: "c", structure: "tunnel" }, { id: "train-curve", system: "train", startNodeId: "train-a", endNodeId: "train-b", structure: "elevated", geometry: { type: "bezier", controlPoints: [{ x: 50, y: 40 }] } }]; city.railStations = [{ id: "west", system: "metro", name: "West", nodeId: "a" }, { id: "central", system: "metro", name: "Central", nodeId: "b" }, { id: "east", system: "metro", name: "East", nodeId: "c" }]; city.railLines = [{ id: "red", system: "metro", name: "Red Line", color: "#cc3344", stationIds: ["west", "central", "east"], path: [{ trackId: "ab", forward: true }, { trackId: "bc", forward: true }], loop: false }];
-    await new SaveManager().saveAs(city.name, city, { x: 0, y: 0, zoom: 1, rotation: 0 }); const folder = saves.directories.get(city.name)!; const metadata = JSON.parse(folder.files.get("metadata.json")!.content); const map = JSON.parse(folder.files.get("map.json")!.content); expect(metadata.formatVersion).toBe(14); expect(map).toMatchObject({ metroLogo: city.metroLogo, railNodes: city.railNodes, railTracks: city.railTracks, railStations: city.railStations, railLines: city.railLines }); const loaded = await new SaveManager().load(); expect(loaded.city.metroLogo).toBe(city.metroLogo); expect(loaded.city.railNodes).toEqual(city.railNodes); expect(loaded.city.railTracks).toEqual(city.railTracks); expect(loaded.city.railStations).toEqual(city.railStations); expect(loaded.city.railLines).toEqual(city.railLines);
+    await new SaveManager().saveAs(city.name, city, { x: 0, y: 0, zoom: 1, rotation: 0 }); const folder = saves.directories.get(city.name)!; const metadata = JSON.parse(folder.files.get("metadata.json")!.content); const map = JSON.parse(folder.files.get("map.json")!.content); expect(metadata.formatVersion).toBe(15); expect(map).toMatchObject({ metroLogo: city.metroLogo, railNodes: city.railNodes, railTracks: city.railTracks, railStations: city.railStations, railLines: city.railLines }); const loaded = await new SaveManager().load(); expect(loaded.city.metroLogo).toBe(city.metroLogo); expect(loaded.city.railNodes).toEqual(city.railNodes); expect(loaded.city.railTracks).toEqual(city.railTracks); expect(loaded.city.railStations).toEqual(city.railStations); expect(loaded.city.railLines).toEqual(city.railLines);
   });
 
   it("migrates version 13 passenger railway data to the train system", async () => {
@@ -450,6 +450,17 @@ describe("SaveManager", () => {
     for (let hour = 1; hour <= 3; hour += 1) { vi.setSystemTime(new Date(`2026-01-01T1${hour}:00:00Z`)); await manager.autoSave(city, camera, { maxSlots: 2 }); }
     const metadata = await Promise.all([...saves.directories.values()].map(async (folder) => JSON.parse(folder.files.get("metadata.json")!.content)));
     expect(metadata.filter((value) => value.autosave)).toHaveLength(2); expect(metadata.filter((value) => !value.autosave)).toHaveLength(1); expect(saves.directories.has("Rolling City")).toBe(true);
+  });
+
+  it("round-trips airport and ferry routes, validates endpoints, and migrates version 14", async () => {
+    const saves = new MemoryDirectory(); installStorage(saves); const city = createEmptyCity("Air and sea"); const manager = new SaveManager(); const camera = { x: 0, y: 0, zoom: 1, rotation: 0 };
+    city.zones = (["airport", "airport", "ferry-terminal", "ferry-terminal"] as const).map((type, index) => ({ id: String(index), type, source: "custom", opacity: 0.4, polygon: [{ x: index * 200, y: 0 }, { x: index * 200 + 100, y: 0 }, { x: index * 200 + 100, y: 100 }] }));
+    city.serviceRoutes = [{ id: "flight", name: "Flight", system: "airplane", color: "#337799", startZoneId: "0", endZoneId: "1", waypoints: [] }, { id: "ship", name: "Ferry", system: "ferry", color: "#337799", startZoneId: "2", endZoneId: "3", waypoints: [{ x: 550, y: 400 }] }];
+    await manager.saveAs(city.name, city, camera); expect((await manager.load()).city.serviceRoutes).toEqual(city.serviceRoutes);
+    const folder = saves.directories.get(city.name)!; const mapFile = folder.files.get("map.json")!; const valid = JSON.parse(mapFile.content);
+    for (const mutate of [(map: typeof valid) => { map.serviceRoutes[0].endZoneId = "2"; }, (map: typeof valid) => { map.serviceRoutes[0].startZoneId = "missing"; }, (map: typeof valid) => { map.serviceRoutes.push(map.serviceRoutes[0]); }, (map: typeof valid) => { map.serviceRoutes[1].waypoints[0].x = "bad"; }]) { const invalid = structuredClone(valid); mutate(invalid); mapFile.content = JSON.stringify(invalid); await expect(manager.load()).rejects.toMatchObject({ code: "invalid" }); }
+    delete valid.serviceRoutes; mapFile.content = JSON.stringify(valid); const metadataFile = folder.files.get("metadata.json")!; const metadata = JSON.parse(metadataFile.content); metadata.formatVersion = 14; metadataFile.content = JSON.stringify(metadata);
+    expect((await manager.load()).city.serviceRoutes).toEqual([]);
   });
 
   it("isolates same-name cities and retains each city's automatic history across renames", async () => {
