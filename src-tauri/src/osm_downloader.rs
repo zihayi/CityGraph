@@ -8,6 +8,9 @@ const USER_AGENT: &str = "CityGraph/0.2.0 (+https://github.com/zihayi/CityGraph)
 const MAP_URL: &str = "https://api.openstreetmap.org/api/0.6/map";
 const SEARCH_URL: &str = "https://photon.komoot.io/api/";
 const MAX_BYTES: usize = 32 * 1024 * 1024;
+const TILE_EDGE_KM: f64 = 2.0;
+const MIN_TIMEOUT_TILE_EDGE_KM: f64 = 0.25;
+const MAX_CONSECUTIVE_TIMEOUT_SPLITS: usize = 3;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize)]
 pub struct OsmBounds {
@@ -42,7 +45,54 @@ impl OsmBounds {
             Self { south: latitude, west: longitude, ..*self },
         ]
     }
+
+    fn dimensions_km(&self) -> (f64, f64) {
+        let latitude = if self.south <= 0.0 && self.north >= 0.0 { 0.0 } else { self.south.abs().min(self.north.abs()) };
+        let height = (self.north - self.south).to_radians() * 6371.0088;
+        let width = (self.east - self.west).to_radians() * 6371.0088 * latitude.to_radians().cos();
+        (width, height)
+    }
+
+    fn download_children(&self) -> Option<Vec<Self>> {
+        let (width, height) = self.dimensions_km();
+        // A long narrow selection must not be rejected just because a four-way
+        // split would make its short edge smaller than the API's minimum.
+        let children = if width > height * 3.0 {
+            let middle = (self.west + self.east) / 2.0;
+            vec![Self { east: middle, ..*self }, Self { west: middle, ..*self }]
+        } else if height > width * 3.0 {
+            let middle = (self.south + self.north) / 2.0;
+            vec![Self { north: middle, ..*self }, Self { south: middle, ..*self }]
+        } else { self.split().to_vec() };
+        children.iter().all(|child| child.validate_download().is_ok()).then_some(children)
+    }
+
+    fn timeout_children(&self) -> Option<Vec<Self>> {
+        let (width, height) = self.dimensions_km();
+        if width.max(height) <= MIN_TIMEOUT_TILE_EDGE_KM { None } else { self.download_children() }
+    }
 }
+
+// Enumerate the initial grid lazily: even a very large selection does not
+// allocate millions of pending bounds before cancellation is possible.
+struct OsmTileGrid { bounds: OsmBounds, columns: usize, rows: usize, next: usize }
+impl OsmTileGrid {
+    fn new(bounds: OsmBounds) -> Self {
+        let (width, height) = bounds.dimensions_km();
+        Self { bounds, columns: (width / TILE_EDGE_KM).ceil().max(1.0) as usize, rows: (height / TILE_EDGE_KM).ceil().max(1.0) as usize, next: 0 }
+    }
+}
+impl Iterator for OsmTileGrid {
+    type Item = OsmBounds;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.next >= self.columns * self.rows { return None; }
+        let row = self.next / self.columns; let column = self.next % self.columns; self.next += 1;
+        let b = self.bounds; let dx = (b.east - b.west) / self.columns as f64; let dy = (b.north - b.south) / self.rows as f64;
+        Some(OsmBounds { south: b.south + row as f64 * dy, west: b.west + column as f64 * dx, north: if row + 1 == self.rows { b.north } else { b.south + (row + 1) as f64 * dy }, east: if column + 1 == self.columns { b.east } else { b.west + (column + 1) as f64 * dx } })
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) { let remaining = self.columns * self.rows - self.next; (remaining, Some(remaining)) }
+}
+impl ExactSizeIterator for OsmTileGrid {}
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -89,12 +139,16 @@ fn client(timeout: u64) -> Result<Client, String> {
 }
 
 fn network_error(error: reqwest::Error) -> String {
-    if error.is_timeout() { "timeout".into() } else if error.is_connect() { "connection".into() } else if error.is_body() || error.is_decode() { "interrupted".into() } else { "network".into() }
+    if error.is_connect() { "connection".into() } else if error.is_timeout() { "timeout".into() } else if error.is_body() || error.is_decode() { "interrupted".into() } else { "network".into() }
 }
 
 // Retry a complete tile, never append a partially received response to the map.
 // Dropping this future (the download cancellation select) also cancels backoff.
-async fn request_body(client: &Client, endpoint: &str, query: &[(&str, String)], limit: usize, mut progress: impl FnMut(usize, bool)) -> Result<(StatusCode, Vec<u8>), String> {
+async fn request_body(client: &Client, endpoint: &str, query: &[(&str, String)], limit: usize, progress: impl FnMut(usize, bool)) -> Result<(StatusCode, Vec<u8>), String> {
+    request_body_with_policy(client, endpoint, query, limit, false, progress).await
+}
+
+async fn request_body_with_policy(client: &Client, endpoint: &str, query: &[(&str, String)], limit: usize, split_timeouts: bool, mut progress: impl FnMut(usize, bool)) -> Result<(StatusCode, Vec<u8>), String> {
     for attempt in 0..3 {
         let mut retry_after = None;
         let result = match client.get(endpoint).query(query).send().await {
@@ -105,7 +159,7 @@ async fn request_body(client: &Client, endpoint: &str, query: &[(&str, String)],
                 if status.is_success() || status == StatusCode::BAD_REQUEST {
                     bounded_body(response, if status.is_success() { limit } else { 64 * 1024 }, |bytes| progress(bytes, false)).await.map(|body| (status, body))
                 } else if status == StatusCode::TOO_MANY_REQUESTS { Err("rateLimited".into()) }
-                else if status == StatusCode::REQUEST_TIMEOUT { Err("timeout".into()) }
+                else if status == StatusCode::REQUEST_TIMEOUT || status == StatusCode::GATEWAY_TIMEOUT { Err("timeout".into()) }
                 else if status.is_server_error() { Err("serverUnavailable".into()) }
                 else { Err("rejected".into()) }
             }
@@ -114,6 +168,10 @@ async fn request_body(client: &Client, endpoint: &str, query: &[(&str, String)],
             Ok(body) => return Ok(body),
             Err(error) => {
                 let retryable = matches!(error.as_str(), "network" | "connection" | "interrupted" | "timeout" | "serverUnavailable" | "rateLimited");
+                if split_timeouts && error == "timeout" {
+                    if let Some(seconds) = retry_after { if seconds > 10 { return Err("serverUnavailable".into()); } tokio::time::sleep(Duration::from_secs(seconds)).await; }
+                    return Err(error);
+                }
                 if !retryable || attempt == 2 || retry_after.is_some_and(|seconds| seconds > 10) { return Err(error); }
                 progress(0, true);
                 tokio::time::sleep(Duration::from_secs(retry_after.unwrap_or(1 << attempt).max(1))).await;
@@ -181,21 +239,35 @@ fn node_limit_response(status: StatusCode, body: &str) -> bool {
 }
 
 async fn download_from(bounds: OsmBounds, on_progress: Channel<DownloadProgress>, endpoint: &str) -> Result<DownloadResult, String> {
-    let client = client(45)?;
-    let mut pending = vec![bounds]; let mut parts = Vec::new(); let mut bytes = 0;
-    while let Some(tile) = pending.pop() {
-        let total_tiles = parts.len() + pending.len() + 1;
+    bounds.validate_download()?;
+    let client = client(60)?;
+    let mut grid = OsmTileGrid::new(bounds); let mut total_tiles = grid.len();
+    let mut pending = Vec::new(); let mut parts = Vec::new(); let mut bytes = 0; let mut consecutive_timeout_splits = 0;
+    let _ = on_progress.send(DownloadProgress { completed_tiles: 0, total_tiles, bytes: 0, stage: "preparing" });
+    while let Some(tile) = pending.pop().or_else(|| grid.next()) {
         let _ = on_progress.send(DownloadProgress { completed_tiles: parts.len(), total_tiles, bytes, stage: "downloading" });
         let bbox = format!("{},{},{},{}", tile.west, tile.south, tile.east, tile.north);
-        let (status, body) = request_body(&client, endpoint, &[("bbox", bbox)], MAX_BYTES - bytes, |downloaded, retrying| {
+        let timeout_children = tile.timeout_children();
+        let response = request_body_with_policy(&client, endpoint, &[("bbox", bbox)], MAX_BYTES - bytes, timeout_children.is_some() || consecutive_timeout_splits > 0, |downloaded, retrying| {
             let _ = on_progress.send(DownloadProgress { completed_tiles: parts.len(), total_tiles, bytes: bytes + downloaded, stage: if retrying { "retrying" } else { "downloading" } });
-        }).await?;
+        }).await;
+        let (status, body) = match response {
+            Ok(response) => response,
+            Err(error) => {
+                if error != "timeout" || consecutive_timeout_splits >= MAX_CONSECUTIVE_TIMEOUT_SPLITS { return Err(error); }
+                let Some(children) = timeout_children else { return Err(error); };
+                consecutive_timeout_splits += 1; total_tiles += children.len() - 1;
+                pending.extend(children.into_iter().rev());
+                let _ = on_progress.send(DownloadProgress { completed_tiles: parts.len(), total_tiles, bytes, stage: "splitting" });
+                continue;
+            }
+        };
         if status == StatusCode::BAD_REQUEST {
             if node_limit_response(status, &String::from_utf8_lossy(&body)) {
-                let children = tile.split();
-                if children.iter().any(|part| part.validate_download().is_err()) { return Err("tooLarge".into()); }
+                let children = tile.download_children().ok_or("tooLarge")?;
+                total_tiles += children.len() - 1;
                 pending.extend(children.into_iter().rev());
-                let _ = on_progress.send(DownloadProgress { completed_tiles: parts.len(), total_tiles: parts.len() + pending.len(), bytes, stage: "splitting" });
+                let _ = on_progress.send(DownloadProgress { completed_tiles: parts.len(), total_tiles, bytes, stage: "splitting" });
                 continue;
             }
             return Err("invalidBounds".into());
@@ -204,6 +276,7 @@ async fn download_from(bounds: OsmBounds, on_progress: Channel<DownloadProgress>
         let xml = String::from_utf8(body).map_err(|_| "invalidResponse")?;
         if !xml.contains("<osm ") || !xml.trim_end().ends_with("</osm>") || xml.contains("<error>") || xml.contains("<remark>") { return Err("invalidResponse".into()); }
         parts.push(xml);
+        consecutive_timeout_splits = 0;
     }
     let _ = on_progress.send(DownloadProgress { completed_tiles: parts.len(), total_tiles: parts.len(), bytes, stage: "complete" });
     Ok(DownloadResult { parts, bounds, bytes })
@@ -233,6 +306,30 @@ pub fn osm_cancel_download(request_id: String, state: State<'_, OsmNetworkState>
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn initial_tiles_are_bounded_contiguous_and_cover_the_whole_selection() {
+        for bounds in [OsmBounds { south: 30.0, west: 120.0, north: 30.06, east: 120.06 }, OsmBounds { south: 80.0, west: 179.94, north: 80.04, east: 180.0 }] {
+            let grid = OsmTileGrid::new(bounds); let columns = grid.columns; let count = grid.len(); let tiles: Vec<_> = grid.collect();
+            assert!(count > 1); assert_eq!(tiles.len(), count);
+            assert_eq!(tiles[0].south, bounds.south); assert_eq!(tiles[0].west, bounds.west);
+            assert_eq!(tiles.last().unwrap().north, bounds.north); assert_eq!(tiles.last().unwrap().east, bounds.east);
+            for (index, tile) in tiles.iter().enumerate() {
+                let (width, height) = tile.dimensions_km(); assert!(width <= TILE_EDGE_KM + 1e-8 && height <= TILE_EDGE_KM + 1e-8); assert!(tile.validate_download().is_ok());
+                if index % columns != 0 { assert_eq!(tiles[index - 1].east, tile.west); }
+                if index >= columns { assert_eq!(tiles[index - columns].north, tile.south); }
+            }
+        }
+        let grid = OsmTileGrid::new(OsmBounds { south: -85.0, west: -180.0, north: 85.0, east: 180.0 });
+        assert!(grid.len() > 1_000_000); assert!(std::mem::size_of_val(&grid) < 128);
+    }
+    #[test]
+    fn narrow_tiles_split_along_their_long_edge_and_tiny_timeouts_stop_subdividing() {
+        let narrow = OsmBounds { south: 30.0, west: 120.0, north: 30.01, east: 120.0002 };
+        let children = narrow.download_children().unwrap(); assert_eq!(children.len(), 2);
+        assert_eq!(children[0].west, narrow.west); assert_eq!(children[1].east, narrow.east);
+        assert_eq!(children[0].north, children[1].south); assert!(children.iter().all(|tile| tile.validate_download().is_ok()));
+        assert!(OsmBounds { south: 30.0, west: 120.0, north: 30.001, east: 120.001 }.timeout_children().is_none());
+    }
     async fn serve_responses(responses: Vec<String>) -> (String, tokio::task::JoinHandle<()>) {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -255,6 +352,42 @@ mod tests {
         ]).await;
         let result = download_from(OsmBounds { south: 30.0, west: 120.0, north: 30.01, east: 120.01 }, Channel::new(|_| Ok(())), &endpoint).await.unwrap();
         assert_eq!(result.parts, vec![xml]); assert_eq!(result.bytes, xml.len()); server.await.unwrap();
+    }
+    #[tokio::test]
+    async fn splits_a_gateway_timeout_without_refetching_completed_initial_tiles() {
+        let xml = "<osm version=\"0.6\"><node id=\"1\" lat=\"30\" lon=\"120\"/></osm>";
+        let ok = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{xml}", xml.len());
+        let (endpoint, server) = serve_responses(vec![ok.clone(), "HTTP/1.1 504 Gateway Timeout\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".into(), ok.clone(), ok.clone(), ok.clone(), ok]).await;
+        let events = std::sync::Arc::new(Mutex::new(Vec::<serde_json::Value>::new())); let captured = events.clone();
+        let progress = Channel::new(move |body| { if let tauri::ipc::InvokeResponseBody::Json(json) = body { captured.lock().unwrap().push(serde_json::from_str(&json).unwrap()); } Ok(()) });
+        let result = download_from(OsmBounds { south: 30.0, west: 120.0, north: 30.01, east: 120.03 }, progress, &endpoint).await.unwrap();
+        assert_eq!(result.parts.len(), 5); assert_eq!(result.bytes, xml.len() * 5); server.await.unwrap();
+        let events = events.lock().unwrap(); assert_eq!(events[0]["totalTiles"], 2);
+        let split = events.iter().find(|event| event["stage"] == "splitting").unwrap();
+        assert_eq!(split["completedTiles"], 1); assert_eq!(split["totalTiles"], 5); assert_eq!(split["bytes"], xml.len());
+        assert_eq!(events.last().unwrap()["stage"], "complete");
+    }
+    #[tokio::test]
+    async fn stops_adaptive_splitting_when_the_service_keeps_timing_out() {
+        let timeout = "HTTP/1.1 504 Gateway Timeout\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_string();
+        let (endpoint, server) = serve_responses(vec![timeout; MAX_CONSECUTIVE_TIMEOUT_SPLITS + 1]).await;
+        let result = download_from(OsmBounds { south: 30.0, west: 120.0, north: 30.016, east: 120.016 }, Channel::new(|_| Ok(())), &endpoint).await;
+        assert!(matches!(result, Err(error) if error == "timeout")); server.await.unwrap();
+    }
+    #[tokio::test]
+    async fn response_deadlines_return_to_the_splitter_without_retrying_the_same_bbox() {
+        use tokio::io::AsyncReadExt;
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap(); let endpoint = format!("http://{}/map", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move { let (mut stream, _) = listener.accept().await.unwrap(); let mut buffer = [0; 4096]; stream.read(&mut buffer).await.unwrap(); tokio::time::sleep(Duration::from_millis(200)).await; });
+        let client = Client::builder().timeout(Duration::from_millis(50)).build().unwrap();
+        assert_eq!(request_body_with_policy(&client, &endpoint, &[], 1024, true, |_, _| {}).await.unwrap_err(), "timeout");
+        server.await.unwrap();
+    }
+    #[tokio::test]
+    async fn gateway_backoff_does_not_trigger_more_subdivision_requests() {
+        let (endpoint, server) = serve_responses(vec!["HTTP/1.1 504 Gateway Timeout\r\nRetry-After: 60\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".into()]).await;
+        let result = download_from(OsmBounds { south: 30.0, west: 120.0, north: 30.01, east: 120.01 }, Channel::new(|_| Ok(())), &endpoint).await;
+        assert!(matches!(result, Err(error) if error == "serverUnavailable")); server.await.unwrap();
     }
     #[tokio::test]
     async fn respects_long_retry_after_and_does_not_retry_rejected_requests() {

@@ -1,27 +1,46 @@
-.osm-download-panel { display: grid; gap: 12px; min-width: 0; }
+.osm-download-panel { display: grid; grid-template-columns: minmax(0, 1fr) 272px; gap: 22px; min-width: 0; align-items: start; }
+.osm-download-main, .osm-download-options { display: grid; gap: 12px; min-width: 0; align-content: start; }
+.osm-download-options { padding-left: 20px; border-left: 1px solid var(--menu-border); }
+.osm-download-options .osm-layer-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 8px; }
+.osm-download-options .osm-layer-picker label { font-size: 11px; padding: 6px 2px; }
+.osm-download-options .osm-import-help { font-size: 11px; }
 .osm-place-search { display: flex; gap: 8px; }
 .osm-place-search input { flex: 1; min-width: 0; }
-.osm-place-search button, .osm-online-toolbar button, .osm-download-actions button, .osm-source-switch button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 12px; border: 1px solid #43676f; border-radius: 7px; background: #14313d; color: #d0e7e6; font-size: 12px; cursor: pointer; }
+.osm-place-search button, .osm-online-toolbar button, .osm-download-actions button, .osm-source-switch button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 9px 12px; border: 1px solid var(--menu-border); border-radius: 6px; background: var(--menu-control); color: var(--menu-muted); font-size: 12px; cursor: pointer; }
+.osm-place-search button { flex-shrink: 0; color: var(--menu-accent); }
+.osm-place-search button:hover:not(:disabled), .osm-online-toolbar button:hover:not(:disabled), .osm-source-switch button:hover:not(:disabled) { background: var(--menu-selected); border-color: #b6c6ab; }
 .osm-online-toolbar { display: flex; flex-wrap: wrap; gap: 7px; }
-.osm-online-toolbar button[aria-pressed="true"], .osm-source-switch button[aria-pressed="true"] { border-color: #60d2c8; background: #19645f; color: #edfffa; }
-.osm-online-map { position: relative; isolation: isolate; width: 100%; height: 340px; min-height: 340px; overflow: hidden; border: 1px solid #487278; border-radius: 9px; background: #dce5df; }
+.osm-online-toolbar button[aria-pressed="true"] { border-color: #b6c6ab; background: var(--menu-selected); color: #405f43; }
+.osm-online-map { position: relative; isolation: isolate; width: 100%; height: 360px; min-height: 300px; overflow: hidden; border: 1px solid var(--menu-border); border-radius: 9px; background: var(--menu-panel); }
 .osm-online-map-canvas { width: 100%; height: 100%; }
 .osm-online-map.is-selecting .leaflet-container, .osm-online-map.is-selecting .leaflet-interactive { cursor: crosshair; }
 .osm-online-map.is-disabled { pointer-events: none; opacity: .8; }
-.osm-online-map .leaflet-control-attribution { font-size: 9px; }
-.osm-online-map .leaflet-control-attribution a { color: #125549; }
-.osm-online-map .leaflet-control-zoom a { color: #214b4a; text-decoration: none; }
+.osm-online-map .leaflet-control-attribution { color: var(--menu-muted); background: rgb(250 251 247 / 95%); font-size: 9px; }
+.osm-online-map .leaflet-control-attribution a { color: var(--menu-accent-hover); }
+.osm-online-map .leaflet-control-zoom { border: 1px solid var(--menu-border); border-radius: 6px; overflow: hidden; box-shadow: 0 2px 8px rgb(36 48 36 / 10%); }
+.osm-online-map .leaflet-control-zoom a { background: var(--menu-surface); color: var(--menu-accent-hover); border-color: var(--menu-border); text-decoration: none; }
+.osm-online-map .leaflet-control-zoom a:hover { background: var(--menu-selected); }
+.osm-online-map .osm-tile-source > div { border-color: var(--menu-border); background: var(--menu-surface); color: var(--menu-text); box-shadow: 0 3px 12px rgb(36 48 36 / 12%); }
 .osm-place-results { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; max-height: 190px; overflow-y: auto; }
-.osm-place-results button { display: grid; gap: 4px; width: 100%; padding: 9px 11px; border: 1px solid #365863; border-radius: 7px; background: #102b36; color: #d7eeee; text-align: left; cursor: pointer; }
-.osm-place-results button:hover { border-color: #62cfc5; }
-.osm-place-results small { color: #9bb6bb; font-size: 10px; }
-.osm-coordinate-fields { color: #b6cccc; font-size: 12px; }
+.osm-place-results button { display: grid; gap: 4px; width: 100%; padding: 10px 12px; border: 1px solid var(--menu-border); border-radius: 7px; background: var(--menu-control); color: var(--menu-text); text-align: left; cursor: pointer; }
+.osm-place-results button:hover { border-color: #b6c6ab; background: var(--menu-selected); }
+.osm-place-results strong { font-size: 12px; font-weight: 600; }
+.osm-place-results small { color: var(--menu-muted); font-size: 11px; }
+.osm-coordinate-fields { color: var(--menu-muted); font-size: 12px; }
 .osm-coordinate-fields summary { cursor: pointer; }
 .osm-coordinate-fields > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 10px; }
-.osm-download-size { color: #bde5df; font-variant-numeric: tabular-nums; }
+.osm-download-size { color: var(--menu-muted); font-variant-numeric: tabular-nums; }
 .osm-download-actions { display: flex; justify-content: flex-end; }
-.osm-download-actions button.primary { border-color: #55d4c7; background: #117b74; color: #eafff8; }
-.osm-download-progress { display: grid; gap: 6px; color: #bfe9e4; font-size: 12px; }
-.osm-download-progress progress { width: 100%; height: 7px; accent-color: #4bd6c9; }
-.osm-source-switch { display: flex; gap: 8px; }
-.osm-source-switch button { flex: 1; }
+.osm-download-actions button { width: 100%; }
+.osm-download-actions button.primary { border-color: var(--menu-accent); background: var(--menu-accent); color: #fff; }
+.osm-download-actions button.primary:hover:not(:disabled) { background: var(--menu-accent-hover); border-color: var(--menu-accent-hover); }
+.osm-download-progress { display: grid; gap: 8px; padding: 12px; border-radius: 7px; background: var(--menu-panel); color: var(--menu-accent-hover); font-size: 12px; }
+.osm-download-progress strong { font-weight: 600; }
+.osm-download-progress progress { width: 100%; height: 7px; border: 0; border-radius: 4px; overflow: hidden; accent-color: var(--menu-accent); }
+.osm-download-progress progress::-webkit-progress-bar { background: #e1e5da; }
+.osm-download-progress progress::-webkit-progress-value { background: var(--menu-accent); }
+.osm-source-switch { display: flex; gap: 16px; border-bottom: 1px solid var(--menu-border); }
+.osm-source-switch button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; padding: 10px 2px; }
+.osm-source-switch button[aria-pressed="true"] { border-bottom-color: var(--menu-accent); color: var(--menu-accent-hover); font-weight: 600; }
+@media (max-width: 900px) { .osm-download-panel { grid-template-columns: 1fr; gap: 20px; } .osm-download-options { padding-left: 0; padding-top: 16px; border-left: 0; border-top: 1px solid var(--menu-border); } .osm-download-options .osm-layer-picker { grid-template-columns: repeat(3, minmax(0, 1fr)); } .osm-online-map { height: 320px; } }
+@media (max-width: 600px) { .osm-download-options .osm-layer-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

@@ -2,7 +2,7 @@ import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
 import { osmBoundsError, type GeoPoint, type OSMBounds } from "../geometry/OSMBounds";
 
 export interface OSMSearchResult extends GeoPoint { id: string; name: string; displayName: string; bounds?: OSMBounds | null }
-export interface OSMDownloadProgress { completedTiles: number; totalTiles: number; bytes: number; stage: "downloading" | "splitting" | "retrying" | "complete" }
+export interface OSMDownloadProgress { completedTiles: number; totalTiles: number; bytes: number; stage: "preparing" | "downloading" | "splitting" | "retrying" | "complete" }
 export interface OSMDownloadResult { parts: string[]; bounds: OSMBounds; bytes: number }
 const errorCodes = ["unsupported", "network", "connection", "interrupted", "serverUnavailable", "rejected", "timeout", "rateLimited", "tooLarge", "invalidBounds", "invalidResponse", "cancelled", "busy"] as const;
 export type OSMNetworkErrorCode = typeof errorCodes[number];

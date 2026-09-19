@@ -62,7 +62,7 @@ export function OSMDownloadMap(props: Props) {
       link.href = "https://www.openstreetmap.org/copyright"; link.target = "_blank"; link.rel = "noreferrer"; link.textContent = "© OpenStreetMap contributors";
       content.append(link); sources.append(summary, content);
       L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: sources.outerHTML }).on("tileerror", () => latest.current.onTileError()).addTo(instance);
-      rectangle.current = L.rectangle([[props.bounds.south, props.bounds.west], [props.bounds.north, props.bounds.east]], { color: "#0b958d", weight: 2, fillOpacity: 0.15, interactive: false }).addTo(instance);
+      rectangle.current = L.rectangle([[props.bounds.south, props.bounds.west], [props.bounds.north, props.bounds.east]], { color: "#61815a", weight: 2, fillOpacity: 0.15, interactive: false }).addTo(instance);
       instance.on("moveend", () => { const center = instance.getCenter().wrap(); latest.current.onCenter({ latitude: Math.max(-85, Math.min(85, center.lat)), longitude: center.lng }); });
       applyBounds(latest.current.bounds); applyFocus(latest.current.focus); applyInteraction();
       resize = new ResizeObserver(() => instance.invalidateSize({ animate: false })); resize.observe(element);

@@ -83,7 +83,7 @@ export function ImportMapDialog({ locale, hasUnsavedChanges, allowMerge = true, 
   };
   const number = new Intl.NumberFormat(locale); const extent = region ?? result?.city.bounds;
   const centerCrop = () => { if (!result) return; const box = result.city.bounds; const width = Math.min(1000, box.width); const height = Math.min(1000, box.height); setRegion({ x: box.x + (box.width - width) / 2, y: box.y + (box.height - height) / 2, width, height }); };
-  return <div className="modal-backdrop" style={pickingPosition ? { display: "none" } : undefined}><section ref={dialog} className="dialog-card osm-import-dialog" role="dialog" aria-modal="true" aria-labelledby="osm-import-title" onKeyDown={(event) => {
+  return <div className="modal-backdrop" style={pickingPosition ? { display: "none" } : undefined}><section ref={dialog} className="dialog-card osm-import-dialog paper-dialog" data-source={source} role="dialog" aria-modal="true" aria-labelledby="osm-import-title" onKeyDown={(event) => {
     if (event.key === "Escape" && !creating) { event.preventDefault(); event.stopPropagation(); onCancel(); }
     if (event.key !== "Tab") return;
     const controls = [...(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), a[href], summary') ?? [])].filter((element) => element.getClientRects().length > 0);

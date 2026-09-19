@@ -1,6 +1,11 @@
-/* Quiet, map-paper surfaces for entry, saves and preferences. */
+/* Shared map-paper surfaces for entry, saves, preferences and importing. */
+.settings-dialog, .paper-dialog {
+  --menu-surface: #fafbf7; --menu-control: #fff; --menu-panel: #f3f5ed;
+  --menu-text: #344237; --menu-muted: #6e7a64; --menu-border: #d5dbce;
+  --menu-accent: #61815a; --menu-accent-hover: #507147; --menu-selected: #e5ecdf;
+}
 .settings-backdrop, .modal-backdrop:has(.paper-dialog) { background: rgb(34 44 36 / 28%); backdrop-filter: none; }
-.settings-dialog, .paper-dialog { color: #344237; background: #fafbf7; border: 1px solid #d5dbce; border-radius: 14px; box-shadow: 0 16px 50px rgb(36 48 36 / 15%); backdrop-filter: none; }
+.settings-dialog, .paper-dialog { color: var(--menu-text); background: var(--menu-surface); border: 1px solid var(--menu-border); border-radius: 14px; box-shadow: 0 16px 50px rgb(36 48 36 / 15%); backdrop-filter: none; }
 .settings-dialog { width: min(960px, 100%); height: min(740px, calc(100dvh - 40px)); grid-template-rows: 76px minmax(0, 1fr); }
 .settings-dialog .settings-header { background: #fafbf7; border-color: #e1e5da; padding: 0 26px; }
 .settings-dialog .settings-header h2 { color: #344237; font-size: 21px; font-weight: 600; }

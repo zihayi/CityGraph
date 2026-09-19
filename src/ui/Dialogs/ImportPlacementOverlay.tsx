@@ -105,16 +105,16 @@ export function ImportPlacementOverlay({ request, mapRef, onConfirm, onCancel, t
   }}>
     <svg className="import-placement-preview" aria-hidden="true">
       <g transform={`translate(${screen.x} ${screen.y}) rotate(${camera.rotation * 180 / Math.PI}) scale(${camera.zoom}) translate(${-center.x} ${-center.y})`}>
-        <rect x={bounds.x} y={bounds.y} width={bounds.width} height={bounds.height} fill={valid ? "#28cfc4" : "#df6a6a"} fillOpacity=".08" stroke={valid ? "#21e6d6" : "#f97878"} strokeWidth="2" strokeDasharray="8 5" vectorEffect="non-scaling-stroke"/>
+        <rect x={bounds.x} y={bounds.y} width={bounds.width} height={bounds.height} fill={valid ? "#61815a" : "#b45f52"} fillOpacity=".08" stroke={valid ? "#61815a" : "#b45f52"} strokeWidth="2" strokeDasharray="8 5" vectorEffect="non-scaling-stroke"/>
         <g opacity=".65" fillRule="evenodd">
-          <path d={paths.zones} fill="#ba9ae1"/><path d={paths.parks} fill="#6ee399"/><path d={paths.waters} fill="#43bfff"/><path d={paths.buildings} fill="#ffe29b"/>
-          {paths.roads.map((road) => <path key={road.width} d={road.path} fill="none" stroke="#6effef" strokeWidth={road.width} strokeLinecap="round" strokeLinejoin="round"/>)}
-          <path d={paths.facilities} fill="none" stroke="#ffffff" strokeWidth="2" vectorEffect="non-scaling-stroke"/>
+          <path d={paths.zones} fill="#b8b0c4"/><path d={paths.parks} fill="#a8c398"/><path d={paths.waters} fill="#91baca"/><path d={paths.buildings} fill="#a5b4bd"/>
+          {paths.roads.map((road) => <path key={road.width} d={road.path} fill="none" stroke="#567b65" strokeWidth={road.width} strokeLinecap="round" strokeLinejoin="round"/>)}
+          <path d={paths.facilities} fill="none" stroke="#344237" strokeWidth="2" vectorEffect="non-scaling-stroke"/>
         </g>
       </g>
-      <g transform={`translate(${screen.x} ${screen.y})`} fill="none" stroke={valid ? "#11ffee" : "#ff7777"} strokeWidth="2"><circle r="8"/><path d="M-16 0H16M0-16V16"/></g>
+      <g transform={`translate(${screen.x} ${screen.y})`} fill="none" stroke={valid ? "#44613c" : "#b45f52"} strokeWidth="2"><circle r="8"/><path d="M-16 0H16M0-16V16"/></g>
     </svg>
-    <section className="import-placement-panel" onPointerDown={(event) => event.stopPropagation()}>
+    <section className="import-placement-panel paper-dialog" onPointerDown={(event) => event.stopPropagation()}>
       <header><MapPin size={20}/><strong id="import-placement-title">{t("import.pickTitle")}</strong></header>
       <p>{t("import.pickHint")}</p>
       <output data-x={point.x} data-y={point.y}>X: {point.x.toFixed(1)} m · Y: {point.y.toFixed(1)} m</output>
